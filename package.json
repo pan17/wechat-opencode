@@ -1,0 +1,41 @@
+{
+  "name": "wechat-acp",
+  "version": "0.1.0",
+  "description": "Bridge WeChat to any ACP-compatible AI agent",
+  "type": "module",
+  "bin": {
+    "wechat-acp": "./dist/bin/wechat-acp.js"
+  },
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/bin/wechat-acp.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.16.1",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "wechat",
+    "acp",
+    "agent-client-protocol",
+    "ai-agent",
+    "bridge"
+  ]
+}

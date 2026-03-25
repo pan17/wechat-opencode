@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- Add `--show-thoughts` flag to forward agent thinking to WeChat (off by default)
+- Stream thought messages in real-time at thought→tool and thought→message transitions
+- Log all agent thought chunks to terminal for debugging
+
 ## 0.1.1
 
 - Set default idle timeout to 1440 minutes (24 hours); use `--idle-timeout 0` for unlimited

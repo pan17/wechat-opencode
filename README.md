@@ -80,6 +80,7 @@ Options:
 - `--config <file>`: load JSON config file
 - `--idle-timeout <minutes>`: session idle timeout, default `1440` (use `0` for unlimited)
 - `--max-sessions <count>`: maximum concurrent user sessions, default `10`
+- `--show-thoughts`: forward agent thinking to WeChat (default: off)
 - `-h, --help`: show help
 
 Examples:

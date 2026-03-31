@@ -1,8 +1,8 @@
-# WeChat ACP
+# WeChat OpenCode
 
 Bridge WeChat direct messages to any ACP-compatible AI agent.
 
-`wechat-acp` logs in with the WeChat iLink bot API, polls incoming 1:1 messages, forwards them to an ACP agent over stdio, and sends the agent reply back to WeChat.
+`wechat-opencode` logs in with the WeChat iLink bot API, polls incoming 1:1 messages, forwards them to an ACP agent over stdio, and sends the agent reply back to WeChat.
 
 <img src="./resources/screenshot.jpg" alt="wechat-acp screenshot" width="400" />
 
@@ -22,15 +22,15 @@ Bridge WeChat direct messages to any ACP-compatible AI agent.
 
 - Node.js 20+
 - A WeChat environment that can use the iLink bot API
-- An ACP-compatible agent available locally or through `npx`
+- [OpenCode](https://github.com/anomalyco/opencode) installed locally or via `npx`
 
 ## Installation
 
 Clone this repository and install dependencies:
 
 ```bash
-git clone https://github.com/formulahendry/wechat-acp.git
-cd wechat-acp
+git clone https://github.com/pan17/wechat-opencode.git
+cd wechat-opencode
 npm install
 npm run build
 ```
@@ -39,16 +39,27 @@ The `npm install` step automatically installs the `send-wechat` tool to `~/.conf
 
 ## Quick Start
 
+> **Important**: Run the bridge from your **working directory** (e.g. your project folder), **not** from the `wechat-opencode` installation directory. Running from the install directory may cause conflicts.
+
 Start with a built-in agent preset:
 
 ```bash
-node dist/bin/wechat-acp.js --agent opencode
+cd /path/to/your/workdir
+node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent opencode
 ```
 
 Or use a raw custom command:
 
 ```bash
-node dist/bin/wechat-acp.js --agent "npx my-agent --acp"
+cd /path/to/your/workdir
+node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent "npx my-agent --acp"
+```
+
+Or use a raw custom command:
+
+```bash
+cd /path/to/your/workdir
+node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent "npx my-agent --acp"
 ```
 
 On first run, the bridge will:
@@ -63,7 +74,7 @@ On first run, the bridge will:
 List the bundled presets:
 
 ```bash
-node dist/bin/wechat-acp.js agents
+node /path/to/wechat-opencode/dist/bin/wechat-acp.js agents
 ```
 
 Current presets:
@@ -96,10 +107,11 @@ Options:
 Examples:
 
 ```bash
-node dist/bin/wechat-acp.js --agent opencode
-node dist/bin/wechat-acp.js --agent opencode --cwd D:\code\project
-node dist/bin/wechat-acp.js --agent "npx opencode-ai acp"
-node dist/bin/wechat-acp.js --agent opencode --daemon
+cd /path/to/your/workdir
+node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent opencode
+node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent opencode --cwd D:\code\project
+node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent "npx opencode-ai acp"
+node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent opencode --daemon
 ```
 
 ## Configuration File

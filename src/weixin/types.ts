@@ -155,6 +155,8 @@ export interface GetUploadUrlReq {
 export interface GetUploadUrlResp {
   upload_param?: string;
   thumb_upload_param?: string;
+  /** 完整上传 URL（服务端直接返回，无需客户端拼接） */
+  upload_full_url?: string;
 }
 
 export interface SendTypingReq {

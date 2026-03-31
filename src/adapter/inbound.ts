@@ -3,10 +3,23 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
 import type * as acp from "@agentclientprotocol/sdk";
 import type { WeixinMessage, MessageItem } from "../weixin/types.js";
 import { MessageItemType } from "../weixin/types.js";
 import { parseAesKey, downloadAndDecrypt } from "../weixin/media.js";
+
+/**
+ * Save downloaded file to temp directory with a unique name.
+ */
+function saveToTemp(buffer: Buffer, fileName: string, tempDir: string): string {
+  fs.mkdirSync(tempDir, { recursive: true });
+  const safeName = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}-${fileName.replace(/[^\w.-]/g, "_")}`;
+  const filePath = path.join(tempDir, safeName);
+  fs.writeFileSync(filePath, buffer);
+  return filePath;
+}
 
 /**
  * Extract text body from a WeChat message's item_list.
@@ -55,6 +68,7 @@ export async function weixinMessageToPrompt(
   msg: WeixinMessage,
   cdnBaseUrl: string,
   log: (msg: string) => void,
+  tempDir: string,
 ): Promise<acp.ContentBlock[]> {
   const blocks: acp.ContentBlock[] = [];
 
@@ -68,11 +82,10 @@ export async function weixinMessageToPrompt(
   const mediaItem = findMediaItem(msg.item_list);
   if (mediaItem) {
     try {
-      const attached = await convertMediaItem(mediaItem, cdnBaseUrl, log);
+      const attached = await convertMediaItem(mediaItem, cdnBaseUrl, log, tempDir);
       if (attached) blocks.push(attached);
     } catch (err) {
       log(`Media download failed, skipping: ${String(err)}`);
-      // Add a text note about the media
       const mediaType = mediaItem.type === MessageItemType.IMAGE ? "image"
         : mediaItem.type === MessageItemType.VIDEO ? "video"
         : mediaItem.type === MessageItemType.FILE ? `file (${mediaItem.file_item?.file_name ?? "unknown"})`
@@ -94,6 +107,7 @@ async function convertMediaItem(
   item: MessageItem,
   cdnBaseUrl: string,
   log: (msg: string) => void,
+  tempDir: string,
 ): Promise<acp.ContentBlock | null> {
   if (item.type === MessageItemType.IMAGE && item.image_item?.media) {
     const media = item.image_item.media;
@@ -102,12 +116,11 @@ async function convertMediaItem(
 
     log("Downloading image from CDN...");
     const buffer = await downloadAndDecrypt(media.encrypt_query_param, aesKey, cdnBaseUrl);
-    const base64 = buffer.toString("base64");
+    const realPath = saveToTemp(buffer, "image.jpg", tempDir);
 
     return {
-      type: "image",
-      data: base64,
-      mimeType: "image/jpeg",
+      type: "text",
+      text: `[收到图片] 文件已保存到: ${realPath}`,
     } as acp.ContentBlock;
   }
 
@@ -119,26 +132,26 @@ async function convertMediaItem(
     log(`Downloading file "${item.file_item.file_name}" from CDN...`);
     const buffer = await downloadAndDecrypt(media.encrypt_query_param, aesKey, cdnBaseUrl);
 
-    // For text-like files, send as resource; for binary, describe it
     const fileName = item.file_item.file_name ?? "file";
+    const realPath = saveToTemp(buffer, fileName, tempDir);
+
+    // Text files: also read content and include it
     if (isTextFile(fileName)) {
       const content = buffer.toString("utf-8");
       return {
-        type: "resource",
-        resource: {
-          uri: `file:///${fileName}`,
-          mimeType: guessMimeType(fileName),
-          text: content,
-        },
+        type: "text",
+        text: `[收到文件: ${fileName}]\n文件路径: ${realPath}\n\n文件内容:\n${content}`,
       } as acp.ContentBlock;
     }
 
-    return { type: "text", text: `[Received file: ${fileName}, ${buffer.length} bytes]` };
+    // Binary files: just tell agent where it is
+    return {
+      type: "text",
+      text: `[收到文件: ${fileName}] 文件已保存到: ${realPath}\n你可以使用这个路径来读取或处理文件。`,
+    } as acp.ContentBlock;
   }
 
   if (item.type === MessageItemType.VOICE && item.voice_item?.media) {
-    // If there's a transcription, it was already handled in extractText
-    // Otherwise, note we received voice
     return { type: "text", text: "[Received voice message - no transcription available]" };
   }
 
@@ -156,15 +169,4 @@ function isTextFile(name: string): boolean {
     "css", "html", "xml", "yaml", "yml", "toml", "ini", "cfg", "sh",
     "bash", "rs", "go", "rb", "php", "sql", "csv", "log", "env",
   ].includes(ext);
-}
-
-function guessMimeType(name: string): string {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  const map: Record<string, string> = {
-    txt: "text/plain", md: "text/markdown", json: "application/json",
-    js: "text/javascript", ts: "text/typescript", py: "text/x-python",
-    html: "text/html", css: "text/css", xml: "text/xml",
-    yaml: "text/yaml", yml: "text/yaml", csv: "text/csv",
-  };
-  return map[ext] ?? "text/plain";
 }

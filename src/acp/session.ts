@@ -7,7 +7,7 @@
 
 import type { ChildProcess } from "node:child_process";
 import type * as acp from "@agentclientprotocol/sdk";
-import { WeChatAcpClient } from "./client.js";
+import { WeChatAcpClient, type MediaContent } from "./client.js";
 import { spawnAgent, killAgent, type AgentProcessInfo } from "./agent-manager.js";
 
 export interface PendingMessage {
@@ -36,6 +36,7 @@ export interface SessionManagerOpts {
   showThoughts: boolean;
   log: (msg: string) => void;
   onReply: (userId: string, contextToken: string, text: string) => Promise<void>;
+  onMediaReply: (userId: string, contextToken: string, blocks: MediaContent[]) => Promise<void>;
   sendTyping: (userId: string, contextToken: string) => Promise<void>;
 }
 
@@ -100,6 +101,16 @@ export class SessionManager {
     return this.sessions.get(userId);
   }
 
+  /** Find userId and contextToken by ACP session ID */
+  getUserBySessionId(acpSessionId: string): { userId: string; contextToken: string } | null {
+    for (const [userId, session] of this.sessions) {
+      if (session.agentInfo.sessionId === acpSessionId) {
+        return { userId, contextToken: session.contextToken };
+      }
+    }
+    return null;
+  }
+
   get activeCount(): number {
     return this.sessions.size;
   }
@@ -110,6 +121,7 @@ export class SessionManager {
     const client = new WeChatAcpClient({
       sendTyping: () => this.opts.sendTyping(userId, contextToken),
       onThoughtFlush: (text) => this.opts.onReply(userId, contextToken, text),
+      onMediaFlush: (blocks) => this.opts.onMediaReply(userId, contextToken, blocks),
       log: (msg) => this.opts.log(`[${userId}] ${msg}`),
       showThoughts: this.opts.showThoughts,
     });
@@ -153,6 +165,7 @@ export class SessionManager {
         session.client.updateCallbacks({
           sendTyping: () => this.opts.sendTyping(session.userId, pending.contextToken),
           onThoughtFlush: (text) => this.opts.onReply(session.userId, pending.contextToken, text),
+          onMediaFlush: (blocks) => this.opts.onMediaReply(session.userId, pending.contextToken, blocks),
         });
 
         // Reset chunks for the new turn

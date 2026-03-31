@@ -61,7 +61,11 @@ export interface WeChatAcpConfig {
 }
 
 export function defaultStorageDir(): string {
-  return path.join(os.homedir(), ".wechat-acp");
+  return path.join(os.homedir(), ".wechat-opencode");
+}
+
+export function defaultTempDir(storageDir: string): string {
+  return path.join(storageDir, "tempfile");
 }
 
 export function defaultConfig(): WeChatAcpConfig {

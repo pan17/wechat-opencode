@@ -9,9 +9,23 @@
 import fs from "node:fs";
 import type * as acp from "@agentclientprotocol/sdk";
 
+export interface MediaContent {
+  type: "image" | "resource";
+  // For image
+  data?: string; // base64
+  mimeType?: string;
+  // For resource
+  uri?: string;
+  blob?: string; // base64
+  resourceMimeType?: string;
+  // For file
+  fileName?: string;
+}
+
 export interface WeChatAcpClientOpts {
   sendTyping: () => Promise<void>;
   onThoughtFlush: (text: string) => Promise<void>;
+  onMediaFlush: (blocks: MediaContent[]) => Promise<void>;
   log: (msg: string) => void;
   showThoughts: boolean;
 }
@@ -19,6 +33,7 @@ export interface WeChatAcpClientOpts {
 export class WeChatAcpClient implements acp.Client {
   private chunks: string[] = [];
   private thoughtChunks: string[] = [];
+  private mediaBlocks: MediaContent[] = [];
   private opts: WeChatAcpClientOpts;
   private lastTypingAt = 0;
   private static readonly TYPING_INTERVAL_MS = 5_000;
@@ -27,11 +42,16 @@ export class WeChatAcpClient implements acp.Client {
     this.opts = opts;
   }
 
-  updateCallbacks(callbacks: { sendTyping: () => Promise<void>; onThoughtFlush: (text: string) => Promise<void> }): void {
+  updateCallbacks(callbacks: {
+    sendTyping: () => Promise<void>;
+    onThoughtFlush: (text: string) => Promise<void>;
+    onMediaFlush: (blocks: MediaContent[]) => Promise<void>;
+  }): void {
     this.opts = {
       ...this.opts,
       sendTyping: callbacks.sendTyping,
       onThoughtFlush: callbacks.onThoughtFlush,
+      onMediaFlush: callbacks.onMediaFlush,
     };
   }
 
@@ -62,6 +82,29 @@ export class WeChatAcpClient implements acp.Client {
         await this.maybeFlushThoughts();
         if (update.content.type === "text") {
           this.chunks.push(update.content.text);
+        } else if (update.content.type === "image") {
+          // Image content - send immediately via media callback
+          const imageBlock: MediaContent = {
+            type: "image",
+            data: update.content.data,
+            mimeType: update.content.mimeType,
+          };
+          await this.flushMedia([imageBlock]);
+        } else if (update.content.type === "resource") {
+          // Resource content - could be text or binary
+          const resource = update.content.resource;
+          // Check if it's a BlobResourceContents (has blob field)
+          if ("blob" in resource && resource.blob != null) {
+            // Binary resource
+            const resourceBlock: MediaContent = {
+              type: "resource",
+              uri: resource.uri,
+              blob: resource.blob,
+              resourceMimeType: resource.mimeType ?? undefined,
+            };
+            await this.flushMedia([resourceBlock]);
+          }
+          // Text resources are handled via text chunks in tool_call_update
         }
         // Throttle typing indicators
         await this.maybeSendTyping();
@@ -98,6 +141,30 @@ export class WeChatAcpClient implements acp.Client {
                 for (const l of diff.newText.split("\n")) lines.push(`+ ${l}`);
               }
               this.chunks.push("\n```diff\n" + lines.join("\n") + "\n```\n");
+            } else if (c.type === "content") {
+              // Tool result content block - could be text, image, or resource
+              const content = (c as { content: acp.ContentBlock }).content;
+              if (content.type === "image") {
+                const imageBlock: MediaContent = {
+                  type: "image",
+                  data: content.data,
+                  mimeType: content.mimeType,
+                };
+                await this.flushMedia([imageBlock]);
+              } else if (content.type === "resource") {
+                const resource = content.resource;
+                // Check if it's a BlobResourceContents (has blob field)
+                if ("blob" in resource && resource.blob != null) {
+                  const resourceBlock: MediaContent = {
+                    type: "resource",
+                    uri: resource.uri,
+                    blob: resource.blob,
+                    resourceMimeType: resource.mimeType ?? undefined,
+                  };
+                  await this.flushMedia([resourceBlock]);
+                }
+              }
+              // Text content is accumulated to chunks as normal
             }
           }
         }
@@ -142,7 +209,24 @@ export class WeChatAcpClient implements acp.Client {
     const text = this.chunks.join("");
     this.chunks = [];
     this.lastTypingAt = 0;
+
+    // Also flush any accumulated media blocks
+    if (this.mediaBlocks.length > 0) {
+      await this.flushMedia(this.mediaBlocks);
+      this.mediaBlocks = [];
+    }
+
     return text;
+  }
+
+  /** Flush media blocks via callback and reset. */
+  private async flushMedia(blocks: MediaContent[]): Promise<void> {
+    if (blocks.length === 0) return;
+    try {
+      await this.opts.onMediaFlush(blocks);
+    } catch {
+      // best effort
+    }
   }
 
   private async maybeFlushThoughts(): Promise<void> {

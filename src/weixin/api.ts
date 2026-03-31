@@ -22,14 +22,17 @@ function randomWechatUin(): string {
   return Buffer.from(String(uint32), "utf-8").toString("base64");
 }
 
-function buildHeaders(token?: string): Record<string, string> {
+function buildHeaders(opts: { token?: string; body?: string }): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     AuthorizationType: "ilink_bot_token",
     "X-WECHAT-UIN": randomWechatUin(),
   };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  if (opts.body) {
+    headers["Content-Length"] = String(Buffer.byteLength(opts.body, "utf-8"));
+  }
+  if (opts.token?.trim()) {
+    headers["Authorization"] = `Bearer ${opts.token.trim()}`;
   }
   return headers;
 }
@@ -40,7 +43,7 @@ function buildBaseInfo(): BaseInfo {
 
 async function apiGet<T>(baseUrl: string, path: string, token?: string): Promise<T> {
   const url = `${baseUrl.replace(/\/$/, "")}/${path}`;
-  const res = await fetch(url, { headers: buildHeaders(token) });
+  const res = await fetch(url, { headers: buildHeaders({ token }) });
   const text = await res.text();
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
   return JSON.parse(text) as T;
@@ -63,7 +66,7 @@ async function apiPost<T>(
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: buildHeaders(token),
+      headers: buildHeaders({ token, body: bodyStr }),
       body: bodyStr,
       signal: controller.signal,
     });

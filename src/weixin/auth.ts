@@ -14,8 +14,12 @@ export interface TokenData {
   savedAt: string;
 }
 
+function getAuthDir(storageDir: string): string {
+  return path.join(storageDir, "auth");
+}
+
 function getTokenPath(storageDir: string): string {
-  return path.join(storageDir, "token.json");
+  return path.join(getAuthDir(storageDir), "token.json");
 }
 
 export function loadToken(storageDir: string): TokenData | null {
@@ -29,7 +33,8 @@ export function loadToken(storageDir: string): TokenData | null {
 }
 
 export function saveToken(storageDir: string, data: TokenData): void {
-  fs.mkdirSync(storageDir, { recursive: true });
+  const authDir = getAuthDir(storageDir);
+  fs.mkdirSync(authDir, { recursive: true });
   const tokenPath = getTokenPath(storageDir);
   fs.writeFileSync(tokenPath, JSON.stringify(data, null, 2), "utf-8");
 }

@@ -4,9 +4,33 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { Writable, Readable } from "node:stream";
+import path from "node:path";
+import os from "node:os";
+import fs from "node:fs";
 import * as acp from "@agentclientprotocol/sdk";
 import packageJson from "../../package.json" with { type: "json" };
 import type { WeChatAcpClient } from "./client.js";
+
+/**
+ * Resolve the global opencode config path.
+ * Priority: OPENCODE_CONFIG env > ~/.config/opencode/opencode.json
+ */
+function resolveOpencodeConfig(): string | undefined {
+  if (process.env.OPENCODE_CONFIG) return process.env.OPENCODE_CONFIG;
+  const candidates = [
+    path.join(os.homedir(), ".config", "opencode", "opencode.json"),
+    path.join(os.homedir(), ".config", "opencode", "opencode.jsonc"),
+  ];
+  for (const p of candidates) {
+    try {
+      fs.accessSync(p);
+      return p;
+    } catch {
+      // not found
+    }
+  }
+  return undefined;
+}
 
 export interface AgentProcessInfo {
   process: ChildProcess;
@@ -29,10 +53,24 @@ export async function spawnAgent(params: {
 
   log(`Spawning agent: ${command} ${args.join(" ")} (cwd: ${cwd}, shell=${useShell})`);
 
+  // Resolve opencode config path to ensure global config (with plugins) is loaded
+  const opencodeConfig = resolveOpencodeConfig();
+  const rawEnv = { ...process.env, ...env };
+  const mergedEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rawEnv)) {
+    if (v !== undefined) mergedEnv[k] = v;
+  }
+  if (opencodeConfig && !mergedEnv.OPENCODE_CONFIG) {
+    mergedEnv.OPENCODE_CONFIG = opencodeConfig;
+  }
+  if (opencodeConfig && !mergedEnv.OPENCODE_CONFIG) {
+    mergedEnv.OPENCODE_CONFIG = opencodeConfig;
+  }
+
   const proc = spawn(command, args, {
     stdio: ["pipe", "pipe", "inherit"],
     cwd,
-    env: { ...process.env, ...env },
+    env: mergedEnv,
     shell: useShell,
   });
 

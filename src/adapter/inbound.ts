@@ -75,7 +75,10 @@ export async function weixinMessageToPrompt(
   // Extract text
   const text = extractText(msg.item_list);
   if (text) {
-    blocks.push({ type: "text", text });
+    blocks.push({
+      type: "text",
+      text: `${text}\n\n[系统提示: 你正在通过微信(WeChat)与用户聊天。]`,
+    });
   }
 
   // Try to download and attach media

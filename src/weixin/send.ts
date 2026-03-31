@@ -174,6 +174,26 @@ export async function sendMediaMessage(
         },
       }];
       break;
+    case UploadMediaType.FILE:
+      itemList = [{
+        type: MessageItemType.FILE,
+        file_item: {
+          media: cdnMedia,
+          file_name: opts.fileName ?? "file",
+          len: String(rawSize),
+        },
+      }];
+      break;
+    case UploadMediaType.FILE:
+      itemList = [{
+        type: MessageItemType.FILE,
+        file_item: {
+          media: cdnMedia,
+          file_name: opts.fileName ?? "file",
+          len: String(rawSize),
+        },
+      }];
+      break;
     case UploadMediaType.VOICE:
       itemList = [{
         type: MessageItemType.VOICE,

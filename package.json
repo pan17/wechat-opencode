@@ -5,6 +5,8 @@
   "type": "module",
   "files": [
     "dist/",
+    ".opencode/tools/send-wechat.ts",
+    "scripts/install-tool.mjs",
     "README.md",
     "package.json"
   ],
@@ -23,7 +25,8 @@
     "build": "tsc",
     "prepack": "npm run build",
     "start": "node dist/bin/wechat-acp.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "postinstall": "node scripts/install-tool.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.16.1",

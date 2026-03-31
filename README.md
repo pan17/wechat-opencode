@@ -15,6 +15,8 @@ Bridge WeChat direct messages to any ACP-compatible AI agent.
 - Auto-allow permission requests from the agent
 - Direct message only; group chats are ignored
 - Background daemon mode
+- File sending: agent can send files/images back to WeChat via the `send-wechat` tool
+- Automatic model config forwarding for opencode agents
 
 ## Requirements
 
@@ -22,25 +24,38 @@ Bridge WeChat direct messages to any ACP-compatible AI agent.
 - A WeChat environment that can use the iLink bot API
 - An ACP-compatible agent available locally or through `npx`
 
+## Installation
+
+Clone this repository and install dependencies:
+
+```bash
+git clone https://github.com/formulahendry/wechat-acp.git
+cd wechat-acp
+npm install
+npm run build
+```
+
+The `npm install` step automatically installs the `send-wechat` tool to `~/.config/opencode/tools/send-wechat.ts`.
+
 ## Quick Start
 
 Start with a built-in agent preset:
 
 ```bash
-npx wechat-acp --agent opencode
+node dist/bin/wechat-acp.js --agent opencode
 ```
 
 Or use a raw custom command:
 
 ```bash
-npx wechat-acp --agent "npx my-agent --acp"
+node dist/bin/wechat-acp.js --agent "npx my-agent --acp"
 ```
 
 On first run, the bridge will:
 
 1. Start WeChat QR login
 2. Render a QR code in the terminal
-3. Save the login token under `~/.wechat-acp`
+3. Save the login token under `~/.wechat-opencode`
 4. Begin polling direct messages
 
 ## Built-in Agent Presets
@@ -48,7 +63,7 @@ On first run, the bridge will:
 List the bundled presets:
 
 ```bash
-npx wechat-acp agents
+node dist/bin/wechat-acp.js agents
 ```
 
 Current presets:
@@ -81,10 +96,10 @@ Options:
 Examples:
 
 ```bash
-npx wechat-acp --agent opencode
-npx wechat-acp --agent opencode --cwd D:\code\project
-npx wechat-acp --agent "npx opencode-ai acp"
-npx wechat-acp --agent opencode --daemon
+node dist/bin/wechat-acp.js --agent opencode
+node dist/bin/wechat-acp.js --agent opencode --cwd D:\code\project
+node dist/bin/wechat-acp.js --agent "npx opencode-ai acp"
+node dist/bin/wechat-acp.js --agent opencode --daemon
 ```
 
 ## Configuration File
@@ -137,15 +152,30 @@ You can also override or add agent presets:
 By default, runtime files are stored under:
 
 ```text
-~/.wechat-acp
+~/.wechat-opencode
 ```
 
 This directory is used for:
 
 - saved login token
+- auth tokens
+- tempfile (downloaded media)
 - daemon pid file
 - daemon log file
 - sync state
+- bridge state (`.wechat-bridge-state.json` — tracks last active user/session for the `send-wechat` tool)
+
+## Custom Tool: send-wechat
+
+After `npm install`, a `send-wechat` tool is automatically installed to `~/.config/opencode/tools/send-wechat.ts`.
+
+This tool is available to opencode agents and lets them send files back to WeChat:
+
+```
+send-wechat(filePath: string)
+```
+
+The tool reads `~/.wechat-opencode/.wechat-bridge-state.json` to automatically determine the target user and session. The agent only needs to provide the file path.
 
 ## Current Limitations
 

@@ -27,7 +27,7 @@ Bridge WeChat direct messages to any ACP-compatible AI agent.
 Start with a built-in agent preset:
 
 ```bash
-npx wechat-acp --agent copilot
+npx wechat-acp --agent opencode
 ```
 
 Or use a raw custom command:
@@ -53,11 +53,6 @@ npx wechat-acp agents
 
 Current presets:
 
-- `copilot`
-- `claude`
-- `gemini`
-- `qwen`
-- `codex`
 - `opencode`
 
 These presets resolve to concrete `command + args` pairs internally, so users do not need to type long `npx ...` commands.
@@ -86,10 +81,10 @@ Options:
 Examples:
 
 ```bash
-npx wechat-acp --agent copilot
-npx wechat-acp --agent claude --cwd D:\code\project
-npx wechat-acp --agent "npx @github/copilot --acp"
-npx wechat-acp --agent gemini --daemon
+npx wechat-acp --agent opencode
+npx wechat-acp --agent opencode --cwd D:\code\project
+npx wechat-acp --agent "npx opencode-ai acp"
+npx wechat-acp --agent opencode --daemon
 ```
 
 ## Configuration File
@@ -101,7 +96,7 @@ Example:
 ```json
 {
   "agent": {
-    "preset": "copilot",
+    "preset": "opencode",
     "cwd": "D:/code/project"
   },
   "session": {

@@ -23,36 +23,6 @@ export interface ResolvedAgentConfig extends AgentCommandConfig {
 }
 
 export const BUILT_IN_AGENTS: Record<string, AgentPreset> = {
-  copilot: {
-    label: "GitHub Copilot",
-    command: "npx",
-    args: ["@github/copilot", "--acp", "--yolo"],
-    description: "GitHub Copilot",
-  },
-  claude: {
-    label: "Claude Code",
-    command: "npx",
-    args: ["@zed-industries/claude-code-acp"],
-    description: "Claude Code ACP",
-  },
-  gemini: {
-    label: "Gemini CLI",
-    command: "npx",
-    args: ["@google/gemini-cli", "--experimental-acp"],
-    description: "Gemini CLI",
-  },
-  qwen: {
-    label: "Qwen Code",
-    command: "npx",
-    args: ["@qwen-code/qwen-code", "--acp", "--experimental-skills"],
-    description: "Qwen Code",
-  },
-  codex: {
-    label: "Codex CLI",
-    command: "npx",
-    args: ["@zed-industries/codex-acp"],
-    description: "Codex ACP",
-  },
   opencode: {
     label: "OpenCode",
     command: "npx",

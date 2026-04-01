@@ -1,8 +1,8 @@
 # WeChat OpenCode
 
-Bridge WeChat direct messages to any ACP-compatible AI agent.
+Bridge WeChat direct messages to opencode.
 
-`wechat-opencode` logs in with the WeChat iLink bot API, polls incoming 1:1 messages, forwards them to an ACP agent over stdio, and sends the agent reply back to WeChat.
+`wechat-opencode` logs in with the WeChat iLink bot API, polls incoming 1:1 messages, forwards them to opencode over stdio, and sends the agent reply back to WeChat.
 
 <img src="./resources/screenshot.jpg" alt="wechat-acp screenshot" width="400" />
 

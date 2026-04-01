@@ -1,7 +1,7 @@
 {
-  "name": "wechat-acp",
+  "name": "wechat-opencode",
   "version": "0.1.2",
-  "description": "Bridge WeChat to any ACP-compatible AI agent",
+  "description": "Bridge WeChat to any Opencode",
   "type": "module",
   "files": [
     "dist/",
@@ -11,7 +11,7 @@
     "package.json"
   ],
   "bin": {
-    "wechat-acp": "./dist/bin/wechat-acp.js"
+    "wechat-opencode": "./dist/bin/wechat-opencode.js"
   },
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -24,7 +24,7 @@
   "scripts": {
     "build": "tsc",
     "prepack": "npm run build",
-    "start": "node dist/bin/wechat-acp.js",
+    "start": "node dist/bin/wechat-opencode.js",
     "dev": "tsc --watch",
     "postinstall": "node scripts/install-tool.mjs"
   },
@@ -41,16 +41,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/formulahendry/wechat-acp.git"
+    "url": "git+https://github.com/pan17/wechat-opencode.git"
   },
-  "homepage": "https://github.com/formulahendry/wechat-acp#readme",
+  "homepage": "https://github.com/pan17/wechat-opencode#readme",
   "bugs": {
-    "url": "https://github.com/formulahendry/wechat-acp/issues"
+    "url": "https://github.com/pan17/wechat-opencode/issues"
   },
   "license": "MIT",
   "keywords": [
     "wechat",
-    "acp",
+    "opencode",
     "agent-client-protocol",
     "ai-agent",
     "bridge"

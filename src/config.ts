@@ -1,5 +1,5 @@
 /**
- * Configuration types and defaults for wechat-acp.
+ * Configuration types and defaults for wechat-opencode.
  */
 
 import path from "node:path";
@@ -31,7 +31,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentPreset> = {
   },
 };
 
-export interface WeChatAcpConfig {
+export interface WeChatOpencodeConfig {
   wechat: {
     baseUrl: string;
     cdnBaseUrl: string;
@@ -68,7 +68,7 @@ export function defaultTempDir(storageDir: string): string {
   return path.join(storageDir, "tempfile");
 }
 
-export function defaultConfig(): WeChatAcpConfig {
+export function defaultConfig(): WeChatOpencodeConfig {
   const storageDir = defaultStorageDir();
   return {
     wechat: {
@@ -90,7 +90,7 @@ export function defaultConfig(): WeChatAcpConfig {
     },
     daemon: {
       enabled: false,
-      logFile: path.join(storageDir, "wechat-acp.log"),
+      logFile: path.join(storageDir, "wechat-opencode.log"),
       pidFile: path.join(storageDir, "daemon.pid"),
     },
     storage: {

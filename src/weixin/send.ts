@@ -157,11 +157,12 @@ export async function sendMediaMessage(
   switch (mediaType) {
     case UploadMediaType.IMAGE:
       itemList = [{
-        type: MessageItemType.FILE,
-        file_item: {
+        type: MessageItemType.IMAGE,
+        image_item: {
           media: cdnMedia,
-          file_name: opts.fileName ?? "file",
-          len: String(rawSize),  // plaintext size
+          aeskey: cdnMedia.aes_key,
+          url: cdnMedia.encrypt_query_param,
+          mid_size: encryptedSize,
         },
       }];
       break;
@@ -171,16 +172,6 @@ export async function sendMediaMessage(
         video_item: {
           media: cdnMedia,
           thumb_media: thumbCdnMedia,
-        },
-      }];
-      break;
-    case UploadMediaType.FILE:
-      itemList = [{
-        type: MessageItemType.FILE,
-        file_item: {
-          media: cdnMedia,
-          file_name: opts.fileName ?? "file",
-          len: String(rawSize),
         },
       }];
       break;

@@ -1,5 +1,5 @@
 /**
- * WeChatAcpBridge — the main orchestrator.
+ * WeChatOpencodeBridge — the main orchestrator.
  *
  * Connects WeChat's iLink long-poll to ACP agent subprocesses.
  * One bridge = one WeChat bot account → many users → many agent sessions.
@@ -18,14 +18,14 @@ import { SessionManager } from "./acp/session.js";
 import type { MediaContent } from "./acp/client.js";
 import { weixinMessageToPrompt } from "./adapter/inbound.js";
 import { formatForWeChat } from "./adapter/outbound.js";
-import type { WeChatAcpConfig } from "./config.js";
+import type { WeChatOpencodeConfig } from "./config.js";
 
 const TEXT_CHUNK_LIMIT = 4000;
 const TOOL_API_PORT = 18792;
 const TOOL_API_HOST = "127.0.0.1";
 
-export class WeChatAcpBridge {
-  private config: WeChatAcpConfig;
+export class WeChatOpencodeBridge {
+  private config: WeChatOpencodeConfig;
   private abortController = new AbortController();
   private sessionManager: SessionManager | null = null;
   private tokenData: TokenData | null = null;
@@ -34,9 +34,9 @@ export class WeChatAcpBridge {
   private toolApiServer: http.Server | null = null;
   private log: (msg: string) => void;
 
-  constructor(config: WeChatAcpConfig, log?: (msg: string) => void) {
+  constructor(config: WeChatOpencodeConfig, log?: (msg: string) => void) {
     this.config = config;
-    this.log = log ?? ((msg: string) => console.log(`[wechat-acp] ${msg}`));
+    this.log = log ?? ((msg: string) => console.log(`[wechat-opencode] ${msg}`));
   }
 
   async start(opts?: {

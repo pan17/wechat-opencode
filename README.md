@@ -4,7 +4,7 @@ Bridge WeChat direct messages to opencode.
 
 `wechat-opencode` logs in with the WeChat iLink bot API, polls incoming 1:1 messages, forwards them to opencode over stdio, and sends the agent reply back to WeChat.
 
-<img src="./resources/screenshot.jpg" alt="wechat-acp screenshot" width="400" />
+<img src="./resources/screenshot.jpg" alt="wechat-opencode screenshot" width="400" />
 
 ## Features
 
@@ -45,21 +45,21 @@ Start with a built-in agent preset:
 
 ```bash
 cd /path/to/your/workdir
-node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent opencode
+node /path/to/wechat-opencode/dist/bin/wechat-opencode.js --agent opencode
 ```
 
 Or use a raw custom command:
 
 ```bash
 cd /path/to/your/workdir
-node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent "npx my-agent --acp"
+node /path/to/wechat-opencode/dist/bin/wechat-opencode.js --agent "npx my-agent --acp"
 ```
 
 Or use a raw custom command:
 
 ```bash
 cd /path/to/your/workdir
-node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent "npx my-agent --acp"
+node /path/to/wechat-opencode/dist/bin/wechat-opencode.js --agent "npx my-agent --acp"
 ```
 
 On first run, the bridge will:
@@ -74,7 +74,7 @@ On first run, the bridge will:
 List the bundled presets:
 
 ```bash
-node /path/to/wechat-opencode/dist/bin/wechat-acp.js agents
+node /path/to/wechat-opencode/dist/bin/wechat-opencode.js agents
 ```
 
 Current presets:
@@ -86,10 +86,10 @@ These presets resolve to concrete `command + args` pairs internally, so users do
 ## CLI Usage
 
 ```text
-wechat-acp --agent <preset|command> [options]
-wechat-acp agents
-wechat-acp stop
-wechat-acp status
+wechat-opencode --agent <preset|command> [options]
+wechat-opencode agents
+wechat-opencode stop
+wechat-opencode status
 ```
 
 Options:
@@ -108,10 +108,10 @@ Examples:
 
 ```bash
 cd /path/to/your/workdir
-node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent opencode
-node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent opencode --cwd D:\code\project
-node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent "npx opencode-ai acp"
-node /path/to/wechat-opencode/dist/bin/wechat-acp.js --agent opencode --daemon
+node /path/to/wechat-opencode/dist/bin/wechat-opencode.js --agent opencode
+node /path/to/wechat-opencode/dist/bin/wechat-opencode.js --agent opencode --cwd D:\code\project
+node /path/to/wechat-opencode/dist/bin/wechat-opencode.js --agent "npx opencode-ai acp"
+node /path/to/wechat-opencode/dist/bin/wechat-opencode.js --agent opencode --daemon
 ```
 
 ## Configuration File
@@ -192,9 +192,7 @@ The tool reads `~/.wechat-opencode/.wechat-bridge-state.json` to automatically d
 ## Current Limitations
 
 - Direct messages only; group chats are ignored
-- MCP servers are not used
 - Permission requests are auto-approved
-- Agent communication is subprocess-only over stdio
 - Some preset agents may require separate authentication before they can respond successfully
 
 ## Development
@@ -209,7 +207,7 @@ npm run build
 Run the built CLI locally:
 
 ```bash
-node dist/bin/wechat-acp.js --help
+node dist/bin/wechat-opencode.js --help
 ```
 
 Watch mode:

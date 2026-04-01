@@ -1,5 +1,7 @@
 # WeChat OpenCode
 
+[🇨🇳 中文](README_zh.md) | [🇬🇧 English](README.md)
+
 Bridge WeChat direct messages to OpenCode.
 
 <img src="./resources/screenshot.jpg" alt="wechat-bridge-opencode screenshot" width="400" />

@@ -2,7 +2,7 @@
 
 [🇨🇳 中文](README_zh.md) | [🇬🇧 English](README.md)
 
-Bridge WeChat direct messages to OpenCode.
+Bridge WeChat direct messages to OpenCode, with full bidirectional support for text, images, files, audio, and video.
 
 <img src="./resources/screenshot.jpg" alt="wechat-bridge-opencode screenshot" width="400" />
 

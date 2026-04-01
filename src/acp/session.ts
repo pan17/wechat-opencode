@@ -118,8 +118,9 @@ export class SessionManager {
 
   /**
    * Switch workspace: kill old agent and start new one immediately.
+   * Returns a promise that resolves when the new agent is fully ready.
    */
-  async switchWorkspace(userId: string, contextToken: string): Promise<void> {
+  switchWorkspace(userId: string, contextToken: string): Promise<void> {
     const oldSession = this.sessions.get(userId);
     if (oldSession) {
       this.opts.log(`[${userId}] Switching workspace: killing agent`);
@@ -130,7 +131,10 @@ export class SessionManager {
     const cwd = this.opts.resolveCwd(userId);
     this.opts.log(`Starting new session for ${userId} (cwd: ${cwd})`);
 
-    // Create placeholder session immediately so enqueue sees it and queues messages
+    // Create a promise that resolves when spawnAndReplace completes
+    let resolveReady: () => void;
+    const readyPromise = new Promise<void>((resolve) => { resolveReady = resolve; });
+
     const client = new WeChatAcpClient({
       sendTyping: () => this.opts.sendTyping(userId, contextToken),
       onThoughtFlush: (text) => this.opts.onReply(userId, contextToken, text),
@@ -157,10 +161,12 @@ export class SessionManager {
     this.sessions.set(userId, placeholder);
 
     // Now spawn the agent in background
-    this.spawnAndReplace(userId, contextToken, cwd, client).catch((err) => {
+    this.spawnAndReplace(userId, contextToken, cwd, client, resolveReady!).catch((err) => {
       this.opts.log(`[${userId}] Failed to spawn agent: ${String(err)}`);
       this.sessions.delete(userId);
     });
+
+    return readyPromise;
   }
 
   private async spawnAndReplace(
@@ -168,6 +174,7 @@ export class SessionManager {
     contextToken: string,
     cwd: string,
     client: WeChatAcpClient,
+    onReady?: () => void,
   ): Promise<void> {
     const existingSessionId = this.opts.getExistingSessionId?.(userId);
     const agentInfo = await spawnAgent({
@@ -202,6 +209,7 @@ export class SessionManager {
 
     this.opts.onSessionReady?.(userId, agentInfo.sessionId);
     this.sessions.set(userId, session);
+    onReady?.();
   }
 
   getSession(userId: string): UserSession | undefined {

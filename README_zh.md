@@ -2,7 +2,7 @@
 
 [🇨🇳 中文](README_zh.md) | [🇬🇧 English](README.md)
 
-将微信私聊消息桥接到 OpenCode。
+将微信私聊消息桥接到 OpenCode，支持文本、图片、文件、音视频的双向传输。
 
 <img src="./resources/screenshot.jpg" alt="wechat-bridge-opencode screenshot" width="400" />
 

@@ -364,8 +364,10 @@ export class WeChatOpencodeBridge {
             return;
           }
           this.setUserState(userId, targetSession.id, targetDir);
-          await this.sessionManager.switchWorkspace(userId, contextToken);
-          await this.sendReply(userId, contextToken, `🔄 Switched to\n  ${targetDir}`);
+          const readyPromise = this.sessionManager.switchWorkspace(userId, contextToken);
+          await this.sendReply(userId, contextToken, `🔄 Switching to\n  ${targetDir}`);
+          await readyPromise;
+          await this.sendReply(userId, contextToken, `✅ Ready on\n  ${targetDir}`);
           return;
         }
 
@@ -381,8 +383,10 @@ export class WeChatOpencodeBridge {
           return;
         }
         this.setUserState(userId, target.id, target.directory);
-        await this.sessionManager.switchWorkspace(userId, contextToken);
-        await this.sendReply(userId, contextToken, `🔄 Switched to\n  ${target.directory}`);
+        const readyPromise = this.sessionManager.switchWorkspace(userId, contextToken);
+        await this.sendReply(userId, contextToken, `🔄 Switching to\n  ${target.directory}`);
+        await readyPromise;
+        await this.sendReply(userId, contextToken, `✅ Ready on\n  ${target.directory}`);
         break;
       }
 
@@ -405,8 +409,10 @@ export class WeChatOpencodeBridge {
         const existing = sessions.find((s) => s.directory === targetPath);
         const sessionId = existing?.id ?? "";
         this.setUserState(userId, sessionId, targetPath);
-        await this.sessionManager.switchWorkspace(userId, contextToken);
-        await this.sendReply(userId, contextToken, `🔄 Switched to\n  ${targetPath}`);
+        const readyPromise = this.sessionManager.switchWorkspace(userId, contextToken);
+        await this.sendReply(userId, contextToken, `🔄 Switching to\n  ${targetPath}`);
+        await readyPromise;
+        await this.sendReply(userId, contextToken, `✅ Ready on\n  ${targetPath}`);
         break;
       }
 
@@ -446,8 +452,10 @@ export class WeChatOpencodeBridge {
         if (!isNaN(idx) && idx >= 1 && idx <= sessions.length) {
           const target = sessions[idx - 1];
           this.setUserState(userId, target.id, target.directory);
-          await this.sessionManager.switchWorkspace(userId, contextToken);
-          await this.sendReply(userId, contextToken, `🔄 Switched to "${target.title}"\n  ${target.directory}`);
+          const readyPromise = this.sessionManager.switchWorkspace(userId, contextToken);
+          await this.sendReply(userId, contextToken, `🔄 Switching to "${target.title}"\n  ${target.directory}`);
+          await readyPromise;
+          await this.sendReply(userId, contextToken, `✅ Ready on "${target.title}"\n  ${target.directory}`);
           return;
         }
 
@@ -461,8 +469,10 @@ export class WeChatOpencodeBridge {
         }
 
         this.setUserState(userId, target.id, target.directory);
-        await this.sessionManager.switchWorkspace(userId, contextToken);
-        await this.sendReply(userId, contextToken, `🔄 Switched to "${target.title}"\n  ${target.directory}`);
+        const readyPromise = this.sessionManager.switchWorkspace(userId, contextToken);
+        await this.sendReply(userId, contextToken, `🔄 Switching to "${target.title}"\n  ${target.directory}`);
+        await readyPromise;
+        await this.sendReply(userId, contextToken, `✅ Ready on "${target.title}"\n  ${target.directory}`);
         break;
       }
 

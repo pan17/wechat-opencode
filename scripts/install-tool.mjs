@@ -11,4 +11,4 @@ const dst = path.join(dstDir, "send-wechat.ts");
 
 fs.mkdirSync(dstDir, { recursive: true });
 fs.copyFileSync(src, dst);
-console.log("[wechat-opencode] Installed send-wechat tool to", dst);
+console.log("[wechat-bridge-opencode] Installed send-wechat tool to", dst);

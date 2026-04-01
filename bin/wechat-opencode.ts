@@ -30,18 +30,18 @@ function usage(): void {
     .join(", ");
 
   console.log(`
-wechat-opencode — Bridge WeChat to any ACP-compatible AI agent
+wbo — Bridge WeChat to OpenCode
 
 Usage:
-  wechat-opencode --agent <preset|command>  [options]
-  wechat-opencode agents                        List built-in agent presets
-  wechat-opencode stop                          Stop a running daemon
-  wechat-opencode status                        Check daemon status
+  wbo --agent <preset|command>  [options]
+  wbo agents                        List built-in agent presets
+  wbo stop                          Stop a running daemon
+  wbo status                        Check daemon status
 
 Options:
   --agent <value>     Built-in preset name or raw agent command
                       Presets: ${presets}
-                      Examples: "copilot", "claude", "npx tsx ./agent.ts"
+                      Examples: "opencode"
   --cwd <dir>         Working directory for agent (default: current dir)
   --login             Force re-login (new QR code)
   --daemon            Run in background after login

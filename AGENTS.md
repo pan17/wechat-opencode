@@ -34,13 +34,26 @@ node dist/bin/wechat-opencode.js --agent opencode
 
 ```
 bin/wechat-opencode.ts          — CLI entry (arg parsing, daemon, QR rendering)
-src/index.ts               — Public API exports
-src/bridge.ts              — Main orchestrator (WeChat poll ↔ ACP sessions)
-src/config.ts              — Config types, defaults, agent preset registry
-src/vendor.d.ts            — Type declarations for untyped npm packages
-src/acp/                   — ACP protocol: session management, client, agent manager
-src/adapter/               — Message format adapters (inbound/outbound)
-src/weixin/                — WeChat iLink API: auth, monitor, send, media, types
+src/index.ts                    — Public API exports
+src/bridge.ts                   — Main orchestrator (WeChat poll ↔ ACP sessions)
+src/config.ts                   — Config types, defaults, agent preset registry
+src/vendor.d.ts                 — Type declarations for untyped npm packages
+src/acp/
+  session.ts                    — Per-user ACP session manager (spawn/kill/queue)
+  agent-manager.ts              — Spawn agent subprocess + ACP connection (newSession/resumeSession)
+  opencode-sessions.ts          — Read OpenCode SQLite (sessions list)
+  workspace-manager.ts          — (removed — simplified to direct session management)
+src/adapter/
+  inbound.ts                    — WeChat message → ACP ContentBlock[] (text, image, file)
+  outbound.ts                   — ACP reply → WeChat text (formatting, splitting)
+  workspace-cmd.ts              — Parse /workspace, /session, /help commands
+src/weixin/
+  auth.ts                       — WeChat iLink login (QR code, token persistence)
+  monitor.ts                    — Long-poll for new messages
+  send.ts                       — Send text/image/file/video to WeChat
+  api.ts                        — WeChat iLink API (typing indicator, config)
+  media.ts                      — CDN download + AES decryption
+  types.ts                      — WeChat iLink types (MessageType, UploadMediaType, etc.)
 ```
 
 ### Key flows
@@ -48,6 +61,12 @@ src/weixin/                — WeChat iLink API: auth, monitor, send, media, typ
 2. **Bridge** handles QR login → starts `SessionManager` → begins WeChat long-poll
 3. **SessionManager** spawns one ACP subprocess per WeChat user
 4. **Adapters** convert WeChat messages ↔ ACP prompt format and back
+
+### Session management
+- Each WeChat user has **one active agent process** at a time
+- Switching workspace/session kills the old agent and spawns a new one
+- `unstable_resumeSession()` restores conversation context from OpenCode's SQLite DB
+- Session ID is persisted per-user in `~/.wechat-opencode/.wechat-bridge-state.json`
 
 ## Code Style
 
@@ -112,7 +131,38 @@ src/weixin/                — WeChat iLink API: auth, monitor, send, media, typ
 ## Constraints
 
 - **Direct messages only** — group chats are intentionally ignored
-- **No MCP servers** — agent communication is stdio-only
-- **Auto-approve permissions** — all agent permission requests are auto-allowed
-- **One session per user** — managed by `SessionManager` with idle timeout and max concurrent limits
-- **Runtime state** stored in `~/.wechat-opencode/` (auth tokens, daemon PID, logs)
+- **Permission requests are auto-approved** — all agent permission requests are auto-allowed
+- **One agent per user** — managed by `SessionManager` with idle timeout and max concurrent limits
+- **Runtime state** stored in `~/.wechat-opencode/` (auth tokens, daemon PID, logs, user states)
+
+## WeChat Commands
+
+### Workspace (/workspace or /ws)
+| Command | Description |
+|---------|-------------|
+| `/workspace list` | List all directories from OpenCode sessions |
+| `/workspace switch <n\|path>` | Switch to directory by index or path |
+| `/workspace add /path [name]` | Add directory (creates if not exists) |
+| `/workspace status` | Show current directory |
+
+### Session (/session or /s)
+| Command | Description |
+|---------|-------------|
+| `/session list` | List recent 10 sessions with directory |
+| `/session switch <n\|slug>` | Switch to session by index or slug |
+| `/session new` | Restart session (clear context) |
+| `/session status` | Show current session info |
+
+### Help
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all available commands |
+
+## References
+
+- **OpenCode** — https://github.com/anomalyco/opencode
+  The AI agent this project bridges to. Source for ACP protocol details, tool definitions, and agent behavior.
+- **OpenClaw Weixin** — https://github.com/Tencent/openclaw-weixin
+  Official WeChat iLink API reference implementation. Authoritative source for image/file/video sending patterns, `image_item` vs `file_item` structures, CDN upload flows, and `mid_size` (ciphertext size) usage.
+- **OpenCode Docs** — https://opencode.ai/docs/
+  Official documentation for OpenCode configuration, tool registration, and agent customization.

@@ -1,7 +1,7 @@
 {
-  "name": "wechat-opencode",
-  "version": "0.1.2",
-  "description": "Bridge WeChat to any Opencode",
+  "name": "wechat-bridge-opencode",
+  "version": "0.1.4",
+  "description": "Bridge WeChat to OpenCode",
   "type": "module",
   "files": [
     "dist/",
@@ -11,7 +11,7 @@
     "package.json"
   ],
   "bin": {
-    "wechat-opencode": "./dist/bin/wechat-opencode.js"
+    "wbo": "dist/bin/wechat-opencode.js"
   },
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -30,9 +30,11 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.16.1",
+    "better-sqlite3": "^12.8.0",
     "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "typescript": "^5.5.0"
   },

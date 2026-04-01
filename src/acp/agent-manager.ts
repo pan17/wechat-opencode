@@ -45,8 +45,10 @@ export async function spawnAgent(params: {
   env?: Record<string, string>;
   client: WeChatAcpClient;
   log: (msg: string) => void;
+  /** Existing OpenCode session ID to resume */
+  existingSessionId?: string;
 }): Promise<AgentProcessInfo> {
-  const { command, args, cwd, env, client, log } = params;
+  const { command, args, cwd, env, client, log, existingSessionId } = params;
 
   // On Windows, shell mode avoids EINVAL/ENOENT for command shims like npx/claude/gemini.
   const useShell = process.platform === "win32";
@@ -111,13 +113,33 @@ export async function spawnAgent(params: {
   });
   log(`ACP initialized (protocol v${initResult.protocolVersion})`);
 
-  // Create session
-  log("Creating ACP session...");
-  const sessionResult = await connection.newSession({
-    cwd,
-    mcpServers: [],
-  });
-  log(`ACP session created: ${sessionResult.sessionId}`);
+  // Create or resume session
+  let sessionResult: { sessionId: string };
+  if (existingSessionId) {
+    log(`Resuming ACP session: ${existingSessionId}`);
+    try {
+      sessionResult = await connection.unstable_resumeSession({
+        sessionId: existingSessionId,
+        cwd,
+        mcpServers: [],
+      });
+      log(`ACP session resumed: ${sessionResult.sessionId}`);
+    } catch (err) {
+      log(`Failed to resume session ${existingSessionId}: ${String(err)}, creating new one`);
+      sessionResult = await connection.newSession({
+        cwd,
+        mcpServers: [],
+      });
+      log(`ACP session created (fallback): ${sessionResult.sessionId}`);
+    }
+  } else {
+    log("Creating ACP session...");
+    sessionResult = await connection.newSession({
+      cwd,
+      mcpServers: [],
+    });
+    log(`ACP session created: ${sessionResult.sessionId}`);
+  }
 
   return {
     process: proc,

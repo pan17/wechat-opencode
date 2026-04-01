@@ -97,6 +97,10 @@ npx wechat-bridge-opencode --agent opencode
 - 权限请求自动批准
 - `send-wechat` 工具自动安装到 `~/.config/opencode/tools/send-wechat.ts`
 
+## 致谢
+
+本项目基于 [wechat-acp](https://github.com/formulahendry/wechat-acp)（作者 [formulahendry](https://github.com/formulahendry)）二次开发，感谢原作者的贡献！
+
 ## 许可证
 
 MIT

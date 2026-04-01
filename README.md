@@ -96,6 +96,10 @@ Runtime data stored in `~/.wechat-bridge-opencode`:
 - Permission requests are auto-approved
 - `send-wechat` tool auto-installed to `~/.config/opencode/tools/send-wechat.ts`
 
+## Acknowledgment
+
+This project is based on [wechat-acp](https://github.com/formulahendry/wechat-acp) by [formulahendry](https://github.com/formulahendry). Thanks for the original work!
+
 ## License
 
 MIT

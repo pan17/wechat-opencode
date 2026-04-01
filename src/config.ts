@@ -61,7 +61,7 @@ export interface WeChatOpencodeConfig {
 }
 
 export function defaultStorageDir(): string {
-  return path.join(os.homedir(), ".wechat-opencode");
+  return path.join(os.homedir(), ".wechat-bridge-opencode");
 }
 
 export function defaultTempDir(storageDir: string): string {

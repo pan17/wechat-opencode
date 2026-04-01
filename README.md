@@ -4,7 +4,7 @@
 
 Bridge WeChat direct messages to OpenCode, with full bidirectional support for text, images, files, audio, and video.
 
-<img src="./resources/screenshot.jpg" alt="wechat-bridge-opencode screenshot" width="400" />
+<img src="./resources/发送.jpg" alt="Send" width="49%" /> <img src="./resources/接收.jpg" alt="Receive" width="49%" />
 
 ## Features
 

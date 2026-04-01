@@ -19,9 +19,21 @@ const API_URL = "http://127.0.0.1:18792/send-wechat"
 /** Load state from ~/.wechat-opencode/.wechat-bridge-state.json */
 function loadState(): { lastUserId?: string; lastSessionId?: string } {
   try {
-    const stateFile = path.join(os.homedir(), ".wechat-opencode", ".wechat-bridge-state.json")
+    const stateFile = path.join(os.homedir(), ".wechat-bridge-opencode", ".wechat-bridge-state.json")
     if (fs.existsSync(stateFile)) {
-      return JSON.parse(fs.readFileSync(stateFile, "utf-8"))
+      const raw = JSON.parse(fs.readFileSync(stateFile, "utf-8"))
+      // Current format: { users: [{ userId, sessionId, cwd }], updatedAt }
+      if (raw.users && Array.isArray(raw.users) && raw.users.length > 0) {
+        const lastUser = raw.users[raw.users.length - 1]
+        return {
+          lastUserId: lastUser.userId,
+          lastSessionId: lastUser.sessionId,
+        }
+      }
+      // Legacy format: { lastUserId, lastSessionId }
+      if (raw.lastUserId) {
+        return { lastUserId: raw.lastUserId, lastSessionId: raw.lastSessionId }
+      }
     }
   } catch {
     // ignore

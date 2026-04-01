@@ -4,7 +4,7 @@
 
 将微信私聊消息桥接到 OpenCode，支持文本、图片、文件、音视频的双向传输。
 
-<img src="./resources/screenshot.jpg" alt="wechat-bridge-opencode screenshot" width="400" />
+<img src="./resources/发送.jpg" alt="发送" width="49%" /> <img src="./resources/接收.jpg" alt="接收" width="49%" />
 
 ## 功能
 

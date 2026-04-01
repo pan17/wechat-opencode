@@ -55,13 +55,6 @@ cd /path/to/your/workdir
 node /path/to/wechat-opencode/dist/bin/wechat-opencode.js --agent "npx my-agent --acp"
 ```
 
-Or use a raw custom command:
-
-```bash
-cd /path/to/your/workdir
-node /path/to/wechat-opencode/dist/bin/wechat-opencode.js --agent "npx my-agent --acp"
-```
-
 On first run, the bridge will:
 
 1. Start WeChat QR login
@@ -158,6 +151,60 @@ You can also override or add agent presets:
 - Replies are formatted for WeChat before sending.
 - Typing indicators are sent when supported by the WeChat API.
 - Sessions are cleaned up after inactivity (set `idleTimeoutMs` to `0` to disable idle cleanup).
+- Switching workspace or session kills the old agent and spawns a new one immediately.
+- OpenCode session history is resumed via `unstable_resumeSession()` when switching to an existing session.
+
+## WeChat Commands
+
+Users can manage workspaces and sessions directly from WeChat:
+
+### Workspace (`/workspace` or `/ws`)
+| Command | Description |
+|---------|-------------|
+| `/workspace list` | List all directories from OpenCode sessions |
+| `/workspace switch <n\|path>` | Switch to directory by index or path |
+| `/workspace add /path` | Add directory (creates if not exists) |
+| `/workspace status` | Show current directory |
+
+### Session (`/session` or `/s`)
+| Command | Description |
+|---------|-------------|
+| `/session list` | List recent 10 sessions with directory |
+| `/session switch <n\|slug>` | Switch to session by index or slug |
+| `/session new` | Restart session (clear context) |
+| `/session status` | Show current session info |
+
+### Help
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all available commands |
+- Switching workspace or session kills the old agent and spawns a new one immediately.
+- OpenCode session history is resumed via `unstable_resumeSession()` when switching to an existing session.
+
+## WeChat Commands
+
+Users can manage workspaces and sessions directly from WeChat:
+
+### Workspace (`/workspace` or `/ws`)
+| Command | Description |
+|---------|-------------|
+| `/workspace list` | List all directories from OpenCode sessions |
+| `/workspace switch <n\|path>` | Switch to directory by index or path |
+| `/workspace add /path` | Add directory (creates if not exists) |
+| `/workspace status` | Show current directory |
+
+### Session (`/session` or `/s`)
+| Command | Description |
+|---------|-------------|
+| `/session list` | List recent 10 sessions with directory |
+| `/session switch <n\|slug>` | Switch to session by index or slug |
+| `/session new` | Restart session (clear context) |
+| `/session status` | Show current session info |
+
+### Help
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all available commands |
 
 ## Storage
 

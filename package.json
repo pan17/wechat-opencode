@@ -30,9 +30,11 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.16.1",
+    "better-sqlite3": "^12.8.0",
     "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "typescript": "^5.5.0"
   },

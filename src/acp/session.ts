@@ -1,8 +1,9 @@
 /**
  * Per-user ACP session manager.
  *
- * Each WeChat user gets their own agent subprocess + ACP session.
- * Messages are queued per-user to ensure serialized processing.
+ * Each WeChat user has at most ONE active agent subprocess at a time.
+ * Switching workspace kills the old agent and spawns a new one with the new cwd.
+ * Restarting session kills the agent and spawns a new one with the same cwd.
  */
 
 import type { ChildProcess } from "node:child_process";
@@ -24,12 +25,13 @@ export interface UserSession {
   processing: boolean;
   lastActivity: number;
   createdAt: number;
+  /** Set to true when agent is fully initialized */
+  ready: boolean;
 }
 
 export interface SessionManagerOpts {
   agentCommand: string;
   agentArgs: string[];
-  agentCwd: string;
   agentEnv?: Record<string, string>;
   idleTimeoutMs: number;
   maxConcurrentUsers: number;
@@ -38,6 +40,12 @@ export interface SessionManagerOpts {
   onReply: (userId: string, contextToken: string, text: string) => Promise<void>;
   onMediaReply: (userId: string, contextToken: string, blocks: MediaContent[]) => Promise<void>;
   sendTyping: (userId: string, contextToken: string) => Promise<void>;
+  /** Resolve cwd for a given userId */
+  resolveCwd: (userId: string) => string;
+  /** Get existing OpenCode session ID to resume (optional) */
+  getExistingSessionId?: (userId: string) => string | undefined;
+  /** Called after agent starts with the actual session ID */
+  onSessionReady?: (userId: string, sessionId: string) => void;
 }
 
 export class SessionManager {
@@ -51,7 +59,6 @@ export class SessionManager {
   }
 
   start(): void {
-    // Run cleanup every 2 minutes
     this.cleanupTimer = setInterval(() => this.cleanupIdleSessions(), 2 * 60_000);
     this.cleanupTimer.unref();
   }
@@ -62,9 +69,7 @@ export class SessionManager {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = null;
     }
-    // Kill all agent processes
-    for (const [userId, session] of this.sessions) {
-      this.opts.log(`Stopping session for ${userId}`);
+    for (const session of this.sessions.values()) {
       killAgent(session.agentInfo.process);
     }
     this.sessions.clear();
@@ -75,21 +80,18 @@ export class SessionManager {
 
     if (!session) {
       if (this.sessions.size >= this.opts.maxConcurrentUsers) {
-        // Evict oldest idle session
         this.evictOldest();
       }
 
-      session = await this.createSession(userId, message.contextToken);
+      session = await this.createSession(userId, message.contextToken, this.opts.getExistingSessionId?.(userId));
       this.sessions.set(userId, session);
     }
 
-    // Always update contextToken to the latest
     session.contextToken = message.contextToken;
     session.lastActivity = Date.now();
     session.queue.push(message);
 
     if (!session.processing) {
-      // Fire-and-forget processing loop for this user
       session.processing = true;
       this.processQueue(session).catch((err) => {
         this.opts.log(`[${userId}] queue processing error: ${String(err)}`);
@@ -97,11 +99,115 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Restart session for a user: kill old agent, spawn new one with current cwd.
+   * Clears ACP conversation context.
+   */
+  async restartSession(userId: string, contextToken: string): Promise<UserSession | null> {
+    const oldSession = this.sessions.get(userId);
+    if (oldSession) {
+      this.opts.log(`[${userId}] Restarting session`);
+      killAgent(oldSession.agentInfo.process);
+      this.sessions.delete(userId);
+    }
+
+    const newSession = await this.createSession(userId, contextToken);
+    this.sessions.set(userId, newSession);
+    return newSession;
+  }
+
+  /**
+   * Switch workspace: kill old agent and start new one immediately.
+   */
+  async switchWorkspace(userId: string, contextToken: string): Promise<void> {
+    const oldSession = this.sessions.get(userId);
+    if (oldSession) {
+      this.opts.log(`[${userId}] Switching workspace: killing agent`);
+      killAgent(oldSession.agentInfo.process);
+      this.sessions.delete(userId);
+    }
+
+    const cwd = this.opts.resolveCwd(userId);
+    this.opts.log(`Starting new session for ${userId} (cwd: ${cwd})`);
+
+    // Create placeholder session immediately so enqueue sees it and queues messages
+    const client = new WeChatAcpClient({
+      sendTyping: () => this.opts.sendTyping(userId, contextToken),
+      onThoughtFlush: (text) => this.opts.onReply(userId, contextToken, text),
+      onMediaFlush: (blocks) => this.opts.onMediaReply(userId, contextToken, blocks),
+      log: (msg) => this.opts.log(`[${userId}] ${msg}`),
+      showThoughts: this.opts.showThoughts,
+    });
+
+    const placeholder: UserSession = {
+      userId,
+      contextToken,
+      client,
+      agentInfo: {
+        process: null as unknown as ChildProcess,
+        connection: null as unknown as acp.ClientSideConnection,
+        sessionId: "",
+      },
+      queue: [],
+      processing: false,
+      lastActivity: Date.now(),
+      createdAt: Date.now(),
+      ready: false,
+    };
+    this.sessions.set(userId, placeholder);
+
+    // Now spawn the agent in background
+    this.spawnAndReplace(userId, contextToken, cwd, client).catch((err) => {
+      this.opts.log(`[${userId}] Failed to spawn agent: ${String(err)}`);
+      this.sessions.delete(userId);
+    });
+  }
+
+  private async spawnAndReplace(
+    userId: string,
+    contextToken: string,
+    cwd: string,
+    client: WeChatAcpClient,
+  ): Promise<void> {
+    const existingSessionId = this.opts.getExistingSessionId?.(userId);
+    const agentInfo = await spawnAgent({
+      command: this.opts.agentCommand,
+      args: this.opts.agentArgs,
+      cwd,
+      env: this.opts.agentEnv,
+      client,
+      log: (msg) => this.opts.log(`[${userId}] ${msg}`),
+      existingSessionId,
+    });
+
+    const session: UserSession = {
+      userId,
+      contextToken,
+      client,
+      agentInfo,
+      queue: [],
+      processing: false,
+      lastActivity: Date.now(),
+      createdAt: Date.now(),
+      ready: true,
+    };
+
+    agentInfo.process.on("exit", () => {
+      const s = this.sessions.get(userId);
+      if (s && s.agentInfo.process === agentInfo.process) {
+        this.opts.log(`Agent process for ${userId} exited, removing session`);
+        this.sessions.delete(userId);
+      }
+    });
+
+    this.opts.onSessionReady?.(userId, agentInfo.sessionId);
+    this.sessions.set(userId, session);
+  }
+
   getSession(userId: string): UserSession | undefined {
     return this.sessions.get(userId);
   }
 
-  /** Find userId and contextToken by ACP session ID */
   getUserBySessionId(acpSessionId: string): { userId: string; contextToken: string } | null {
     for (const [userId, session] of this.sessions) {
       if (session.agentInfo.sessionId === acpSessionId) {
@@ -115,8 +221,9 @@ export class SessionManager {
     return this.sessions.size;
   }
 
-  private async createSession(userId: string, contextToken: string): Promise<UserSession> {
-    this.opts.log(`Creating new session for ${userId}`);
+  private async createSession(userId: string, contextToken: string, existingSessionId?: string): Promise<UserSession> {
+    const cwd = this.opts.resolveCwd(userId);
+    this.opts.log(`Creating new session for ${userId} (cwd: ${cwd}${existingSessionId ? `, resume: ${existingSessionId}` : ""})`);
 
     const client = new WeChatAcpClient({
       sendTyping: () => this.opts.sendTyping(userId, contextToken),
@@ -129,13 +236,13 @@ export class SessionManager {
     const agentInfo = await spawnAgent({
       command: this.opts.agentCommand,
       args: this.opts.agentArgs,
-      cwd: this.opts.agentCwd,
+      cwd,
       env: this.opts.agentEnv,
       client,
       log: (msg) => this.opts.log(`[${userId}] ${msg}`),
+      existingSessionId,
     });
 
-    // If agent process exits, clean up the session
     agentInfo.process.on("exit", () => {
       const s = this.sessions.get(userId);
       if (s && s.agentInfo.process === agentInfo.process) {
@@ -143,6 +250,9 @@ export class SessionManager {
         this.sessions.delete(userId);
       }
     });
+
+    // Notify bridge of the actual session ID
+    this.opts.onSessionReady?.(userId, agentInfo.sessionId);
 
     return {
       userId,
@@ -153,6 +263,7 @@ export class SessionManager {
       processing: false,
       lastActivity: Date.now(),
       createdAt: Date.now(),
+      ready: true,
     };
   }
 
@@ -161,28 +272,23 @@ export class SessionManager {
       while (session.queue.length > 0 && !this.aborted) {
         const pending = session.queue.shift()!;
 
-        // Keep the ACP client instance stable because the connection is bound to it.
         session.client.updateCallbacks({
           sendTyping: () => this.opts.sendTyping(session.userId, pending.contextToken),
           onThoughtFlush: (text) => this.opts.onReply(session.userId, pending.contextToken, text),
           onMediaFlush: (blocks) => this.opts.onMediaReply(session.userId, pending.contextToken, blocks),
         });
 
-        // Reset chunks for the new turn
         await session.client.flush();
 
         try {
-          // Send typing immediately so user knows the prompt was received
           this.opts.sendTyping(session.userId, pending.contextToken).catch(() => {});
 
-          // Send ACP prompt
           this.opts.log(`[${session.userId}] Sending prompt to agent...`);
           const result = await session.agentInfo.connection.prompt({
             sessionId: session.agentInfo.sessionId,
             prompt: pending.prompt,
           });
 
-          // Collect accumulated text
           let replyText = await session.client.flush();
 
           if (result.stopReason === "cancelled") {
@@ -193,21 +299,18 @@ export class SessionManager {
 
           this.opts.log(`[${session.userId}] Agent done (${result.stopReason}), reply ${replyText.length} chars`);
 
-          // Send reply back to WeChat
           if (replyText.trim()) {
             await this.opts.onReply(session.userId, pending.contextToken, replyText);
           }
         } catch (err) {
           this.opts.log(`[${session.userId}] Agent prompt error: ${String(err)}`);
 
-          // Check if agent died
           if (session.agentInfo.process.killed || session.agentInfo.process.exitCode !== null) {
             this.opts.log(`[${session.userId}] Agent process died, removing session`);
             this.sessions.delete(session.userId);
             return;
           }
 
-          // Send error message to user
           try {
             await this.opts.onReply(
               session.userId,

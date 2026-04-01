@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-- **Package**: `wechat-opencode` v0.1.2 — ESM-only (`"type": "module"`)
+- **Package**: `wechat-opencode` v0.1.6 — ESM-only (`"type": "module"`)
 - **Runtime**: Node.js 20+
 - **Language**: TypeScript, compiled to JS via `tsc`
 - **Package manager**: npm (use `package-lock.json`)
@@ -41,7 +41,7 @@ src/vendor.d.ts                 — Type declarations for untyped npm packages
 src/acp/
   session.ts                    — Per-user ACP session manager (spawn/kill/queue)
   agent-manager.ts              — Spawn agent subprocess + ACP connection (newSession/resumeSession)
-  opencode-sessions.ts          — Read OpenCode SQLite (sessions list)
+  opencode-sessions.ts          — Read OpenCode SQLite (sessions list, @deprecated fallback only)
   workspace-manager.ts          — (removed — simplified to direct session management)
 src/adapter/
   inbound.ts                    — WeChat message → ACP ContentBlock[] (text, image, file)
@@ -64,8 +64,9 @@ src/weixin/
 
 ### Session management
 - Each WeChat user has **one active agent process** at a time
-- Switching workspace/session kills the old agent and spawns a new one
-- `unstable_resumeSession()` restores conversation context from OpenCode's SQLite DB
+- Switching workspace/session uses ACP protocol (`session/new`, `session/load`) — **no process restart**
+- Agent process is spawned once per user; all session/workspace switches happen within the same process
+- `unstable_resumeSession()` is no longer used — `loadSession()` replaces it
 - Session ID is persisted per-user in `~/.wechat-opencode/.wechat-bridge-state.json`
 
 ## Code Style
@@ -149,6 +150,8 @@ src/weixin/
 | Command | Description |
 |---------|-------------|
 | `/session list` | List recent 10 sessions with directory |
+| `/session list --cwd` | List sessions in current workspace only |
+| `/session list <path\|n>` | List sessions filtered by workspace path or index |
 | `/session switch <n\|slug>` | Switch to session by index or slug |
 | `/session new` | Restart session (clear context) |
 | `/session status` | Show current session info |
@@ -166,3 +169,5 @@ src/weixin/
   Official WeChat iLink API reference implementation. Authoritative source for image/file/video sending patterns, `image_item` vs `file_item` structures, CDN upload flows, and `mid_size` (ciphertext size) usage.
 - **OpenCode Docs** — https://opencode.ai/docs/
   Official documentation for OpenCode configuration, tool registration, and agent customization.
+  **ACP Docs** https://agentclientprotocol.com/
+  ACP Server Protocol which OpenCode useing.

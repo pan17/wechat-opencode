@@ -25,6 +25,7 @@ export interface WorkspaceCommand {
 export interface SessionCommand {
   kind: "new" | "switch" | "remove" | "list" | "status";
   name?: string;
+  cwdFilter?: string;  // When set, filter sessions by this cwd
 }
 
 export function parseWorkspaceCommand(text: string): WorkspaceCommand | null {
@@ -103,8 +104,22 @@ export function parseSessionCommand(text: string): SessionCommand | null {
     }
 
     case "list":
-    case "ls":
-      return { kind: "list" };
+    case "ls": {
+      // /s list                  → no filter
+      // /s list --cwd            → filter by current workspace
+      // /s list /path/to/cwd     → filter by specific cwd
+      // /s list N                → filter by workspace at index N (resolved by bridge)
+      const hasCwdFlag = args.includes("--cwd");
+      let cwdFilter: string | undefined;
+      if (hasCwdFlag) {
+        cwdFilter = "__current__";
+      } else if (args.length > 1) {
+        // Take everything after "list" as the filter value
+        const filterValue = args.slice(1).join(" ");
+        if (filterValue) cwdFilter = filterValue;
+      }
+      return { kind: "list", cwdFilter };
+    }
 
     case "status":
     case "current":
@@ -191,16 +206,18 @@ export function formatHelp(): string {
     "── Workspaces ──",
     "  /workspace list          List all workspaces",
     "  /workspace add /path [name]  Add a workspace",
-    "  /workspace switch <name> Switch to a workspace",
+    "  /workspace switch <n|path> Switch to workspace by index or path (loads most recent session)",
     "  /workspace remove <name> Remove a workspace",
     "  /workspace status        Show current workspace",
     "  (shorthand: /ws ...)",
     "",
     "── Sessions ──",
     "  /session new [name]      Create a new session",
-    "  /session switch <name>   Switch to an existing session",
+    "  /session switch <n|slug> Switch to session by index or slug/title",
     "  /session remove <name>   Remove a session",
     "  /session list            List all sessions",
+    "  /session list --cwd      List sessions in current workspace",
+    "  /session list <path|n>   List sessions by workspace path or index",
     "  /session status          Show current session",
     "  (shorthand: /s ...)",
     "",

@@ -16,6 +16,7 @@ import { sendTyping, getConfig } from "./weixin/api.js";
 import { TypingStatus, MessageType, UploadMediaType } from "./weixin/types.js";
 import type { WeixinMessage } from "./weixin/types.js";
 import { SessionManager } from "./acp/session.js";
+// Fallback only — prefer sessionManager.listAgentSessions()
 import { listSessions } from "./acp/opencode-sessions.js";
 import type { MediaContent } from "./acp/client.js";
 import { weixinMessageToPrompt } from "./adapter/inbound.js";
@@ -322,11 +323,14 @@ export class WeChatOpencodeBridge {
 
     switch (cmd!.kind) {
       case "list": {
-        const sessions = listSessions();
+        // SQLite is the authoritative source for all historical sessions.
+        // ACP session/list only returns sessions known to the current agent process,
+        // which is often incomplete.
+        const sessions = listSessions().map((s) => ({ sessionId: s.id, cwd: s.directory, title: s.title }));
         // Unique directories, preserve order (most recent first)
         const dirs: string[] = [];
         for (const s of sessions) {
-          if (!dirs.includes(s.directory)) dirs.push(s.directory);
+          if (!dirs.includes(s.cwd)) dirs.push(s.cwd);
         }
         if (dirs.length === 0) {
           await this.sendReply(userId, contextToken, "No directories found.");
@@ -347,46 +351,48 @@ export class WeChatOpencodeBridge {
       }
 
       case "switch": {
-        const sessions = listSessions();
+        // SQLite for listing (authoritative), ACP for switching
+        const sessions = listSessions().map((s) => ({ sessionId: s.id, cwd: s.directory, title: s.title }));
         const dirs: string[] = [];
         for (const s of sessions) {
-          if (!dirs.includes(s.directory)) dirs.push(s.directory);
+          if (!dirs.includes(s.cwd)) dirs.push(s.cwd);
         }
 
         // Try numeric index first
         const idx = parseInt(cmd!.name!, 10);
         if (!isNaN(idx) && idx >= 1 && idx <= dirs.length) {
           const targetDir = dirs[idx - 1];
-          const targetSession = sessions.find((s) => s.directory === targetDir)!;
           const state = this.getUserState(userId);
           if (state && state.cwd === targetDir) {
             await this.sendReply(userId, contextToken, `Already on ${targetDir}`);
             return;
           }
-          this.setUserState(userId, targetSession.id, targetDir);
-          const readyPromise = this.sessionManager.switchWorkspace(userId, contextToken);
+          // Find most recent session for this cwd
+          const recentForCwd = sessions.find((s) => s.cwd === targetDir);
+          this.setUserState(userId, recentForCwd?.sessionId ?? "", targetDir);
           await this.sendReply(userId, contextToken, `🔄 Switching to\n  ${targetDir}`);
-          await readyPromise;
+          await this.sessionManager.switchWorkspace(userId, contextToken, targetDir, recentForCwd?.sessionId);
           await this.sendReply(userId, contextToken, `✅ Ready on\n  ${targetDir}`);
           return;
         }
 
         // Fallback: match by directory path
-        const target = sessions.find((s) => s.directory === cmd!.name);
+        const target = sessions.find((s) => s.cwd === cmd!.name);
         if (!target) {
           await this.sendReply(userId, contextToken, `Directory "${cmd!.name}" not found. Use /workspace list to see available directories.`);
           return;
         }
         const state = this.getUserState(userId);
-        if (state && state.cwd === target.directory) {
-          await this.sendReply(userId, contextToken, `Already on ${target.directory}`);
+        if (state && state.cwd === target.cwd) {
+          await this.sendReply(userId, contextToken, `Already on ${target.cwd}`);
           return;
         }
-        this.setUserState(userId, target.id, target.directory);
-        const readyPromise = this.sessionManager.switchWorkspace(userId, contextToken);
-        await this.sendReply(userId, contextToken, `🔄 Switching to\n  ${target.directory}`);
-        await readyPromise;
-        await this.sendReply(userId, contextToken, `✅ Ready on\n  ${target.directory}`);
+        // Find most recent session for this cwd
+        const recentForCwd = sessions.find((s) => s.cwd === target.cwd);
+        this.setUserState(userId, recentForCwd?.sessionId ?? "", target.cwd);
+        await this.sendReply(userId, contextToken, `🔄 Switching to\n  ${target.cwd}`);
+        await this.sessionManager.switchWorkspace(userId, contextToken, target.cwd, recentForCwd?.sessionId);
+        await this.sendReply(userId, contextToken, `✅ Ready on\n  ${target.cwd}`);
         break;
       }
 
@@ -404,14 +410,12 @@ export class WeChatOpencodeBridge {
           await this.sendReply(userId, contextToken, `Failed to create directory: ${String(err)}`);
           return;
         }
-        // Find existing session for this directory
-        const sessions = listSessions();
-        const existing = sessions.find((s) => s.directory === targetPath);
-        const sessionId = existing?.id ?? "";
-        this.setUserState(userId, sessionId, targetPath);
-        const readyPromise = this.sessionManager.switchWorkspace(userId, contextToken);
+        // Find most recent session for this cwd
+        const allSessions = listSessions().map((s) => ({ sessionId: s.id, cwd: s.directory, title: s.title }));
+        const recentForCwd = allSessions.find((s) => s.cwd === targetPath);
+        this.setUserState(userId, recentForCwd?.sessionId ?? "", targetPath);
         await this.sendReply(userId, contextToken, `🔄 Switching to\n  ${targetPath}`);
-        await readyPromise;
+        await this.sessionManager.switchWorkspace(userId, contextToken, targetPath, recentForCwd?.sessionId);
         await this.sendReply(userId, contextToken, `✅ Ready on\n  ${targetPath}`);
         break;
       }
@@ -434,53 +438,82 @@ export class WeChatOpencodeBridge {
 
     switch (cmd!.kind) {
       case "list": {
-        const sessions = listSessions();
+        // SQLite is the authoritative source for all historical sessions.
+        let sessions = listSessions().map((s) => ({ sessionId: s.id, cwd: s.directory, title: s.title }));
+        
+        // Filter by cwd if specified
+        const filter = cmd!.cwdFilter;
+        if (filter) {
+          if (filter === "__current__") {
+            // Filter by current workspace
+            const currentCwd = this.getUserState(userId)?.cwd ?? this.config.agent.cwd;
+            sessions = sessions.filter((s) => s.cwd === currentCwd);
+          } else {
+            // Try as numeric index first (1-based into unique dirs)
+            const idx = parseInt(filter, 10);
+            if (!isNaN(idx)) {
+              const dirs: string[] = [];
+              for (const s of sessions) {
+                if (!dirs.includes(s.cwd)) dirs.push(s.cwd);
+              }
+              if (idx >= 1 && idx <= dirs.length) {
+                const targetCwd = dirs[idx - 1];
+                sessions = sessions.filter((s) => s.cwd === targetCwd);
+              }
+            } else {
+              // Try as directory path (normalize slashes for cross-platform match)
+              const normalizedFilter = filter.replace(/\\/g, "/").toLowerCase();
+              sessions = sessions.filter((s) => s.cwd.replace(/\\/g, "/").toLowerCase() === normalizedFilter);
+            }
+          }
+        }
+        
         const lines: string[] = ["💬 Recent Sessions:"];
         for (let i = 0; i < Math.min(sessions.length, 10); i++) {
           const s = sessions[i];
-          lines.push(`  ${i + 1}. ${s.title} — ${s.directory}`);
+          lines.push(`  ${i + 1}. ${s.title ?? "(untitled)"} — ${s.cwd}`);
         }
         await this.sendReply(userId, contextToken, lines.join("\n"));
         break;
       }
 
       case "switch": {
-        const sessions = listSessions().slice(0, 10);
+        // SQLite for listing (authoritative), ACP for switching
+        const sessions = listSessions().map((s) => ({ sessionId: s.id, cwd: s.directory, title: s.title }));
+        const displaySessions = sessions.slice(0, 10);
 
         // Try numeric index first
         const idx = parseInt(cmd!.name!, 10);
-        if (!isNaN(idx) && idx >= 1 && idx <= sessions.length) {
-          const target = sessions[idx - 1];
-          this.setUserState(userId, target.id, target.directory);
-          const readyPromise = this.sessionManager.switchWorkspace(userId, contextToken);
-          await this.sendReply(userId, contextToken, `🔄 Switching to "${target.title}"\n  ${target.directory}`);
-          await readyPromise;
-          await this.sendReply(userId, contextToken, `✅ Ready on "${target.title}"\n  ${target.directory}`);
+        if (!isNaN(idx) && idx >= 1 && idx <= displaySessions.length) {
+          const target = displaySessions[idx - 1];
+          this.setUserState(userId, target.sessionId, target.cwd);
+          await this.sendReply(userId, contextToken, `🔄 Switching to "${target.title ?? "(untitled)"}"\n  ${target.cwd}`);
+          await this.sessionManager.switchSession(userId, contextToken, target.sessionId, target.cwd);
+          await this.sendReply(userId, contextToken, `✅ Ready on "${target.title ?? "(untitled)"}"\n  ${target.cwd}`);
           return;
         }
 
         // Fallback: match by slug/id/title
-        const target = sessions.find(
-          (s) => s.slug === cmd!.name || s.id === cmd!.name || s.title.toLowerCase() === cmd!.name!.toLowerCase(),
+        const target = displaySessions.find(
+          (s) => s.sessionId === cmd!.name || s.title?.toLowerCase() === cmd!.name!.toLowerCase(),
         );
         if (!target) {
           await this.sendReply(userId, contextToken, `Session "${cmd!.name}" not found. Use /session list to see available sessions.`);
           return;
         }
 
-        this.setUserState(userId, target.id, target.directory);
-        const readyPromise = this.sessionManager.switchWorkspace(userId, contextToken);
-        await this.sendReply(userId, contextToken, `🔄 Switching to "${target.title}"\n  ${target.directory}`);
-        await readyPromise;
-        await this.sendReply(userId, contextToken, `✅ Ready on "${target.title}"\n  ${target.directory}`);
+        this.setUserState(userId, target.sessionId, target.cwd);
+        await this.sendReply(userId, contextToken, `🔄 Switching to "${target.title ?? "(untitled)"}"\n  ${target.cwd}`);
+        await this.sessionManager.switchSession(userId, contextToken, target.sessionId, target.cwd);
+        await this.sendReply(userId, contextToken, `✅ Ready on "${target.title ?? "(untitled)"}"\n  ${target.cwd}`);
         break;
       }
 
       case "status": {
         const state = this.getUserState(userId);
         if (state && state.sessionId) {
-          const sessions = listSessions();
-          const current = sessions.find((s) => s.id === state.sessionId);
+          const allSessions = listSessions();
+          const current = allSessions.find((s) => s.id === state.sessionId);
           if (current) {
             await this.sendReply(userId, contextToken, `💬 ${current.title}\n  ${current.directory}`);
             break;
@@ -491,7 +524,8 @@ export class WeChatOpencodeBridge {
       }
 
       case "new": {
-        await this.sessionManager.restartSession(userId, contextToken);
+        const cwd = this.userStates.get(userId)?.cwd ?? this.config.agent.cwd;
+        await this.sessionManager.createNewSession(userId, contextToken, cwd);
         await this.sendReply(userId, contextToken, "🔄 Session restarted. Context cleared.");
         break;
       }

@@ -36,6 +36,7 @@ export class WeChatAcpClient implements acp.Client {
   private mediaBlocks: MediaContent[] = [];
   private opts: WeChatAcpClientOpts;
   private lastTypingAt = 0;
+  private replaying = false;
   private static readonly TYPING_INTERVAL_MS = 5_000;
 
   constructor(opts: WeChatAcpClientOpts) {
@@ -53,6 +54,10 @@ export class WeChatAcpClient implements acp.Client {
       onThoughtFlush: callbacks.onThoughtFlush,
       onMediaFlush: callbacks.onMediaFlush,
     };
+  }
+
+  setReplaying(value: boolean): void {
+    this.replaying = value;
   }
 
   async requestPermission(
@@ -79,6 +84,7 @@ export class WeChatAcpClient implements acp.Client {
 
     switch (update.sessionUpdate) {
       case "agent_message_chunk":
+        if (this.replaying) return; // Ignore replayed content during session/load
         await this.maybeFlushThoughts();
         if (update.content.type === "text") {
           this.chunks.push(update.content.text);
@@ -181,6 +187,21 @@ export class WeChatAcpClient implements acp.Client {
             .join("\n");
           this.opts.log(`[plan]\n${items}`);
         }
+        break;
+
+      case "session_info_update":
+        // Log it, no action needed
+        this.opts.log(`[session_info_update]`);
+        break;
+
+      case "config_option_update":
+        // Log it, no action needed
+        this.opts.log(`[config_option_update]`);
+        break;
+
+      case "available_commands_update":
+        // Log it, no action needed
+        this.opts.log(`[available_commands_update]`);
         break;
     }
   }

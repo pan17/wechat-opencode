@@ -32,10 +32,19 @@ function resolveOpencodeConfig(): string | undefined {
   return undefined;
 }
 
+export interface AgentCapabilities {
+  loadSession: boolean;
+  sessionCapabilities?: {
+    list?: {};
+    close?: {};
+  };
+}
+
 export interface AgentProcessInfo {
   process: ChildProcess;
   connection: acp.ClientSideConnection;
   sessionId: string;
+  capabilities: AgentCapabilities;
 }
 
 export async function spawnAgent(params: {
@@ -113,6 +122,16 @@ export async function spawnAgent(params: {
   });
   log(`ACP initialized (protocol v${initResult.protocolVersion})`);
 
+  // Extract capabilities
+  const caps: AgentCapabilities = {
+    loadSession: initResult.agentCapabilities?.loadSession ?? false,
+    sessionCapabilities: initResult.agentCapabilities?.sessionCapabilities,
+  };
+
+  if (caps.loadSession !== true) {
+    throw new Error("OpenCode does not support loadSession capability. Please upgrade to a version that supports ACP session loading.");
+  }
+
   // Create or resume session
   let sessionResult: { sessionId: string };
   if (existingSessionId) {
@@ -145,6 +164,7 @@ export async function spawnAgent(params: {
     process: proc,
     connection,
     sessionId: sessionResult.sessionId,
+    capabilities: caps,
   };
 }
 

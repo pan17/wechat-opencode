@@ -63,7 +63,7 @@ npx wechat-bridge-opencode --agent opencode
 | 命令 | 说明 |
 |------|------|
 | `/workspace list` | 列出所有目录 |
-| `/workspace switch <n\|路径>` | 切换目录 |
+| `/workspace switch <n\|路径>` | 按序号或路径切换（自动加载最近会话） |
 | `/workspace add /路径 [名称]` | 添加目录 |
 | `/workspace status` | 显示当前目录 |
 
@@ -72,7 +72,9 @@ npx wechat-bridge-opencode --agent opencode
 | 命令 | 说明 |
 |------|------|
 | `/session list` | 列出最近 10 个会话 |
-| `/session switch <n\|slug>` | 切换会话 |
+| `/session list --cwd` | 列出当前工作区下的会话 |
+| `/session list <路径\|n>` | 按工作区路径或索引筛选会话 |
+| `/session switch <n\|slug>` | 按序号或 slug/标题切换 |
 | `/session new` | 新会话（清除上下文） |
 | `/session status` | 显示当前会话 |
 

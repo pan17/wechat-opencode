@@ -1,4 +1,7 @@
 /**
+ * @deprecated No longer used — SessionManager.listAgentSessions() via ACP session/list
+ * is the primary source. This module is kept as a fallback only.
+ *
  * Read OpenCode sessions from its SQLite database.
  *
  * Database path:
@@ -48,7 +51,7 @@ export function listSessions(): OpencodeSession[] {
   if (!db) return [];
   try {
     const rows = db.prepare(
-      "SELECT id, project_id, slug, directory, title, time_updated FROM session WHERE time_archived IS NULL ORDER BY time_updated DESC",
+      "SELECT id, project_id, slug, directory, title, time_updated FROM session WHERE time_archived IS NULL AND parent_id IS NULL ORDER BY time_updated DESC",
     ).all() as Array<{ id: string; project_id: string; slug: string; directory: string; title: string; time_updated: number }>;
     return rows.map((r) => ({
       id: r.id,

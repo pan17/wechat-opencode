@@ -62,7 +62,7 @@ First run will:
 | Command | Description |
 |---------|-------------|
 | `/workspace list` | List all directories |
-| `/workspace switch <n\|path>` | Switch directory |
+| `/workspace switch <n\|path>` | Switch by index or path (loads most recent session) |
 | `/workspace add /path [name]` | Add directory |
 | `/workspace status` | Show current directory |
 
@@ -71,7 +71,9 @@ First run will:
 | Command | Description |
 |---------|-------------|
 | `/session list` | List recent 10 sessions |
-| `/session switch <n\|slug>` | Switch session |
+| `/session list --cwd` | List sessions in current workspace |
+| `/session list <path\|n>` | List sessions by workspace path or index |
+| `/session switch <n\|slug>` | Switch by index or slug/title |
 | `/session new` | New session (clear context) |
 | `/session status` | Show current session |
 

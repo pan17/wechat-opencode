@@ -28,6 +28,22 @@ export interface SessionCommand {
   cwdFilter?: string;  // When set, filter sessions by this cwd
 }
 
+export interface AgentCommand {
+  kind: "list" | "switch" | "status";
+  name?: string;
+}
+
+export interface ModelCommand {
+  kind: "list" | "switch" | "status";
+  name?: string;
+  provider?: string;
+}
+
+export interface ReasoningCommand {
+  kind: "list" | "switch" | "status";
+  name?: string;
+}
+
 export function parseWorkspaceCommand(text: string): WorkspaceCommand | null {
   const trimmed = text.trim();
   const match = trimmed.match(/^\/(?:workspace|ws)\s+(.+)$/i);
@@ -131,6 +147,89 @@ export function parseSessionCommand(text: string): SessionCommand | null {
   }
 }
 
+export function parseAgentCommand(text: string): AgentCommand | null {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^\/agent\s+(.+)$/i);
+  if (!match) return null;
+
+  const args = match[1].trim().split(/\s+/);
+  const subcommand = args[0]?.toLowerCase();
+
+  switch (subcommand) {
+    case "list":
+    case "ls":
+      return { kind: "list" };
+    case "switch":
+    case "sw":
+    case "use": {
+      const target = args.slice(1).join(" ");
+      if (!target) return null;
+      return { kind: "switch", name: target };
+    }
+    case "status":
+    case "current":
+      return { kind: "status" };
+    default:
+      return null;
+  }
+}
+
+export function parseModelCommand(text: string): ModelCommand | null {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^\/model\s+(.+)$/i);
+  if (!match) return null;
+
+  const args = match[1].trim().split(/\s+/);
+  const subcommand = args[0]?.toLowerCase();
+
+  switch (subcommand) {
+    case "list":
+    case "ls": {
+      const provider = args.slice(1).join(" ").trim() || undefined;
+      return { kind: "list", provider };
+    }
+    case "switch":
+    case "sw":
+    case "use": {
+      const target = args.slice(1).join(" ");
+      if (!target) return null;
+      return { kind: "switch", name: target };
+    }
+    case "status":
+    case "current":
+      return { kind: "status" };
+    default:
+      return null;
+  }
+}
+
+export function parseReasoningCommand(text: string): ReasoningCommand | null {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^\/reasoning\s+(.+)$/i);
+  if (!match) return null;
+
+  const args = match[1].trim().split(/\s+/);
+  const subcommand = args[0]?.toLowerCase();
+
+  switch (subcommand) {
+    case "list":
+    case "ls":
+      return { kind: "list" };
+    case "switch":
+    case "sw":
+    case "use": {
+      const target = args.slice(1).join(" ");
+      if (!target) return null;
+      return { kind: "switch", name: target };
+    }
+    case "status":
+    case "current":
+      return { kind: "status" };
+    default:
+      return null;
+  }
+}
+
 export function formatWorkspaceList(
   workspaces: Array<{ id: string; name: string; cwd: string }>,
   activeId: string | null,
@@ -221,6 +320,20 @@ export function formatHelp(): string {
     "  /session status          Show current session",
     "  (shorthand: /s ...)",
     "",
+    "── Agent / Model / Reasoning ──",
+    "  /agent list              List available agents (build, plan, etc.)",
+    "  /agent switch <id>       Switch agent mode",
+    "  /agent status            Show current agent",
+    "  (shorthand: /a ...)",
+    "",
+    "  /model list              List available models",
+    "  /model switch <provider/model>  Switch model",
+    "  /model status            Show current model",
+    "",
+    "  /reasoning list          List reasoning levels",
+    "  /reasoning switch <level>  Switch reasoning level",
+    "  /reasoning status        Show current reasoning level",
+    "",
     "── Help ──",
     "  /help                    Show this help message",
   ].join("\n");
@@ -247,6 +360,20 @@ export function formatHelpWithNativeCommands(nativeCommands: Array<{ name: strin
     "  /session list <path|n>   List sessions by workspace path or index",
     "  /session status          Show current session",
     "  (shorthand: /s ...)",
+    "",
+    "── Agent / Model / Reasoning ──",
+    "  /agent list              List available agents (build, plan, etc.)",
+    "  /agent switch <id>       Switch agent mode",
+    "  /agent status            Show current agent",
+    "  (shorthand: /a ...)",
+    "",
+    "  /model list              List available models",
+    "  /model switch <provider/model>  Switch model",
+    "  /model status            Show current model",
+    "",
+    "  /reasoning list          List reasoning levels",
+    "  /reasoning switch <level>  Switch reasoning level",
+    "  /reasoning status        Show current reasoning level",
     "",
     "  /help                    Show this help message",
   ];

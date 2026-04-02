@@ -26,6 +26,20 @@ export interface UserSession {
   capabilities: AgentCapabilities;
   activeSessionId: string;
   sessions: Map<string, { cwd: string; title?: string }>;
+  currentMode?: string;
+  currentModelId?: string;
+  /** Real available modes from ACP response (e.g., build, plan) */
+  availableModes?: acp.SessionMode[];
+  /** Real available models from ACP response */
+  availableModels?: acp.ModelInfo[];
+  /** Available config options from ACP response (thought_level, etc.) */
+  configOptions?: acp.SessionConfigOption[];
+  /** Current thought level value (tracked manually when setReasoning is called) */
+  currentThoughtLevel?: string;
+  /** Last queried models (used when user does /model list <provider>) */
+  lastQueriedModels?: Map<string, acp.ModelInfo[]>;
+  /** Track which provider was last queried for index-based switching */
+  lastQueriedProvider?: string;
   queue: PendingMessage[];
   processing: boolean;
   lastActivity: number;
@@ -104,6 +118,30 @@ export class SessionManager {
   }
 
   /**
+   * Update session state from ACP loadSession/newSession response.
+   */
+  private applyLoadSessionState(
+    session: UserSession,
+    result: {
+      modes?: { availableModes: acp.SessionMode[]; currentModeId: string } | null;
+      models?: { availableModels: acp.ModelInfo[]; currentModelId: string } | null;
+      configOptions?: acp.SessionConfigOption[] | null;
+    },
+  ): void {
+    if (result.modes) {
+      session.availableModes = result.modes.availableModes;
+      session.currentMode = result.modes.currentModeId;
+    }
+    if (result.models) {
+      session.availableModels = result.models.availableModels;
+      session.currentModelId = result.models.currentModelId;
+    }
+    if (result.configOptions) {
+      session.configOptions = result.configOptions;
+    }
+  }
+
+  /**
    * Switch workspace: loads the most recent session for the given cwd,
    * or creates a new one if none exists.
    * NO kill/respawn of the agent process.
@@ -119,20 +157,21 @@ export class SessionManager {
     if (existingSessionId) {
       // Load existing session for this cwd
       this.opts.log(`[${userId}] Loading session ${existingSessionId} for workspace switch (cwd: ${cwd})`);
-      session.client.setReplaying(true);
-      try {
-        await session.connection.loadSession({
-          sessionId: existingSessionId,
-          cwd,
-          mcpServers: [],
-        });
-        session.activeSessionId = existingSessionId;
-        if (!session.sessions.has(existingSessionId)) {
-          session.sessions.set(existingSessionId, { cwd });
+        session.client.setReplaying(true);
+        try {
+          const loadResult = await session.connection.loadSession({
+            sessionId: existingSessionId,
+            cwd,
+            mcpServers: [],
+          });
+          session.activeSessionId = existingSessionId;
+          this.applyLoadSessionState(session, loadResult);
+          if (!session.sessions.has(existingSessionId)) {
+            session.sessions.set(existingSessionId, { cwd });
+          }
+        } finally {
+          session.client.setReplaying(false);
         }
-      } finally {
-        session.client.setReplaying(false);
-      }
     } else {
       // No existing session — create new one
       this.opts.log(`[${userId}] Creating new session for workspace switch (cwd: ${cwd})`);
@@ -141,6 +180,7 @@ export class SessionManager {
         mcpServers: [],
       });
       session.activeSessionId = result.sessionId;
+      this.applyLoadSessionState(session, result);
       session.sessions.set(result.sessionId, { cwd });
     }
 
@@ -165,12 +205,13 @@ export class SessionManager {
     // Suppress replayed content
     session.client.setReplaying(true);
     try {
-      await session.connection.loadSession({
+      const loadResult = await session.connection.loadSession({
         sessionId,
         cwd,
         mcpServers: [],
       });
       session.activeSessionId = sessionId;
+      this.applyLoadSessionState(session, loadResult);
       if (!session.sessions.has(sessionId)) {
         session.sessions.set(sessionId, { cwd });
       }
@@ -204,6 +245,7 @@ export class SessionManager {
 
     session.sessions.set(result.sessionId, { cwd });
     session.activeSessionId = result.sessionId;
+    this.applyLoadSessionState(session, result);
     session.contextToken = contextToken;
     session.lastActivity = Date.now();
 
@@ -287,6 +329,168 @@ export class SessionManager {
     return this.sessions.size;
   }
 
+  /**
+   * Switch the agent mode (agent) using ACP protocol.
+   */
+  async switchAgent(userId: string, mode: string): Promise<void> {
+    const session = this.sessions.get(userId);
+    if (!session) {
+      return;
+    }
+
+    this.opts.log(`[${userId}] Switching agent mode to: ${mode}`);
+
+    await session.connection.setSessionMode({
+      sessionId: session.activeSessionId,
+      modeId: mode,
+    });
+
+    session.currentMode = mode;
+    session.lastActivity = Date.now();
+  }
+
+  /**
+   * Switch the model using ACP protocol.
+   */
+  async setModel(userId: string, modelId: string): Promise<void> {
+    const session = this.sessions.get(userId);
+    if (!session) {
+      return;
+    }
+
+    this.opts.log(`[${userId}] Switching model to: ${modelId}`);
+
+    await session.connection.unstable_setSessionModel({
+      sessionId: session.activeSessionId,
+      modelId: modelId,
+    });
+
+    session.currentModelId = modelId;
+    session.lastActivity = Date.now();
+  }
+
+  /**
+   * Switch the reasoning level (thought_level) using ACP protocol.
+   */
+  async setReasoning(userId: string, level: string): Promise<void> {
+    const session = this.sessions.get(userId);
+    if (!session) {
+      return;
+    }
+
+    // Find the thought_level config option to get its id
+    const thoughtLevelOpt = session.configOptions?.find(
+      (o) => o.category === "thought_level",
+    );
+
+    if (thoughtLevelOpt) {
+      // Use the actual config option id
+      await session.connection.setSessionConfigOption({
+        sessionId: session.activeSessionId,
+        configId: thoughtLevelOpt.id,
+        type: "select",
+        value: level,
+      });
+      // Track locally so status works even if ACP doesn't echo back
+      session.currentThoughtLevel = level;
+    } else {
+      // Fallback: try without config discovery
+      await session.connection.setSessionConfigOption({
+        sessionId: session.activeSessionId,
+        configId: level,
+        type: "select",
+        value: level,
+      });
+      session.currentThoughtLevel = level;
+    }
+
+    session.lastActivity = Date.now();
+  }
+
+  /**
+   * Get the currently active agent mode for a user.
+   */
+  getActiveMode(userId: string): string | undefined {
+    return this.sessions.get(userId)?.currentMode;
+  }
+
+  /**
+   * Get all available agent modes for a user (real ACP data).
+   */
+  getAvailableModes(userId: string): acp.SessionMode[] | undefined {
+    return this.sessions.get(userId)?.availableModes;
+  }
+
+  /**
+   * Get current reasoning/thought level.
+   */
+  getCurrentReasoning(userId: string): string | undefined {
+    const session = this.sessions.get(userId);
+    if (!session) return undefined;
+    const localTracking = session.currentThoughtLevel;
+    if (localTracking) return localTracking;
+    const thoughtLevelOpt = session.configOptions?.find(
+      (o) => o.category === "thought_level",
+    );
+    return thoughtLevelOpt?.type === "select" ? thoughtLevelOpt.currentValue : undefined;
+  }
+
+  /**
+   * Cache last queried models for a provider.
+   */
+  cacheModelListForProvider(userId: string, provider: string, models: acp.ModelInfo[]): void {
+    const session = this.sessions.get(userId);
+    if (!session) return;
+    if (!session.lastQueriedModels) session.lastQueriedModels = new Map();
+    session.lastQueriedModels.set(provider, models);
+    session.lastQueriedProvider = provider;
+  }
+
+  /**
+   * Get last queried models for a provider.
+   */
+  getCachedModelsForProvider(userId: string, provider: string): acp.ModelInfo[] | undefined {
+    return this.sessions.get(userId)?.lastQueriedModels?.get(provider);
+  }
+
+  /**
+   * Get the provider that was last queried.
+   */
+  getLastQueriedProvider(userId: string): string | undefined {
+    return this.sessions.get(userId)?.lastQueriedProvider;
+  }
+
+  /**
+   * Get all last queried models in order of last queried provider.
+   */
+  getCachedModelsForLastQueried(userId: string): acp.ModelInfo[] | undefined {
+    const session = this.sessions.get(userId);
+    if (!session) return undefined;
+    if (!session.lastQueriedProvider) return undefined;
+    return session.lastQueriedModels?.get(session.lastQueriedProvider);
+  }
+
+  /**
+   * Get the currently active model for a user.
+   */
+  getCurrentModel(userId: string): string | undefined {
+    return this.sessions.get(userId)?.currentModelId;
+  }
+
+  /**
+   * Get all available models for a user (real ACP data).
+   */
+  getAvailableModels(userId: string): acp.ModelInfo[] | undefined {
+    return this.sessions.get(userId)?.availableModels;
+  }
+
+  /**
+   * Get config options for a user (real ACP data).
+   */
+  getConfigOptions(userId: string): acp.SessionConfigOption[] | undefined {
+    return this.sessions.get(userId)?.configOptions;
+  }
+
   private async createInitialSession(userId: string, contextToken: string): Promise<UserSession> {
     const cwd = this.opts.resolveCwd(userId);
     const existingSessionId = this.opts.getExistingSessionId?.(userId);
@@ -339,6 +543,12 @@ export class SessionManager {
       lastActivity: Date.now(),
       createdAt: Date.now(),
       ready: true,
+      // Store real ACP session state data
+      currentMode: agentInfo.currentModeId,
+      currentModelId: agentInfo.currentModelId,
+      availableModes: agentInfo.availableModes,
+      availableModels: agentInfo.availableModels,
+      configOptions: agentInfo.configOptions,
     };
   }
 

@@ -18,17 +18,22 @@ import type { WeixinMessage } from "./weixin/types.js";
 import { SessionManager } from "./acp/session.js";
 // Fallback only — prefer sessionManager.listAgentSessions()
 import { listSessions } from "./acp/opencode-sessions.js";
+import { WeChatAcpClient } from "./acp/client.js";
 import type { MediaContent } from "./acp/client.js";
 import { weixinMessageToPrompt } from "./adapter/inbound.js";
 import { formatForWeChat } from "./adapter/outbound.js";
 import {
   parseWorkspaceCommand,
   parseSessionCommand,
+  parseAgentCommand,
+  parseModelCommand,
+  parseReasoningCommand,
   parseHelpCommand,
   formatHelp,
   formatHelpWithNativeCommands,
 } from "./adapter/workspace-cmd.js";
-import type { WeChatOpencodeConfig } from "./config.js";
+import { listBuiltInAgents, type WeChatOpencodeConfig } from "./config.js";
+import type { ModelInfo } from "@agentclientprotocol/sdk";
 
 const TEXT_CHUNK_LIMIT = 4000;
 const TOOL_API_PORT = 18792;
@@ -307,6 +312,30 @@ export class WeChatOpencodeBridge {
         return;
       }
 
+      const aCmd = parseAgentCommand(textContent);
+      if (aCmd) {
+        this.handleAgentCommand(userId, contextToken, aCmd).catch((err) => {
+          this.log(`Agent command error: ${String(err)}`);
+        });
+        return;
+      }
+
+      const mCmd = parseModelCommand(textContent);
+      if (mCmd) {
+        this.handleModelCommand(userId, contextToken, mCmd).catch((err) => {
+          this.log(`Model command error: ${String(err)}`);
+        });
+        return;
+      }
+
+      const rCmd = parseReasoningCommand(textContent);
+      if (rCmd) {
+        this.handleReasoningCommand(userId, contextToken, rCmd).catch((err) => {
+          this.log(`Reasoning command error: ${String(err)}`);
+        });
+        return;
+      }
+
       // Check for unrecognized slash commands — send hint immediately, then forward to agent
       const slashHint = this.detectUnknownSlashCommand(textContent);
       if (slashHint) {
@@ -538,12 +567,280 @@ export class WeChatOpencodeBridge {
       case "new": {
         const cwd = this.userStates.get(userId)?.cwd ?? this.config.agent.cwd;
         await this.sessionManager.createNewSession(userId, contextToken, cwd);
-        await this.sendReply(userId, contextToken, "🔄 Session restarted. Context cleared.");
+        await this.sendReply(userId, contextToken, "✅ Session restarted. Context cleared.");
         break;
       }
 
       case "remove": {
         await this.sendReply(userId, contextToken, "Sessions are managed by OpenCode.");
+        break;
+      }
+    }
+  }
+
+  // ─── Agent commands (/agent or /a) ───
+
+  private async handleAgentCommand(
+    userId: string,
+    contextToken: string,
+    cmd: ReturnType<typeof parseAgentCommand>,
+  ): Promise<void> {
+    if (!this.sessionManager) return;
+
+    switch (cmd!.kind) {
+      case "list": {
+        const currentMode = this.sessionManager.getActiveMode(userId);
+        const availableModes = this.sessionManager.getAvailableModes(userId);
+        const lines = ["🤖 Agent (mode):"];
+        if (availableModes && availableModes.length > 0) {
+          for (let i = 0; i < availableModes.length; i++) {
+            const m = availableModes[i];
+            const marker = m.id === currentMode ? " ✅" : "";
+            lines.push(`  ${i + 1}. ${m.name}${marker}`);
+          }
+        } else {
+          lines.push("  (OpenCode 未返回可用模式)");
+        }
+        lines.push("");
+        lines.push(`💡 使用 /agent switch <name|序号> 切换`);
+        await this.sendReply(userId, contextToken, lines.join("\n"));
+        break;
+      }
+
+      case "switch": {
+        const availableModes = this.sessionManager.getAvailableModes(userId);
+        const input = cmd!.name!.trim();
+
+        // Try numeric index first
+        const index = parseInt(input, 10);
+        if (!isNaN(index) && index >= 1 && index <= (availableModes?.length ?? 0)) {
+          const m = availableModes![index - 1];
+          const current = this.sessionManager.getActiveMode(userId);
+          if (current === m.id) {
+            await this.sendReply(userId, contextToken, `已在 ${m.name} mode，无需切换`);
+            return;
+          }
+          try {
+            await this.sessionManager.switchAgent(userId, m.id);
+            await this.sendReply(userId, contextToken, `✅ Agent 已切换至 ${m.name}`);
+          } catch (err) {
+            await this.sendReply(userId, contextToken, `⚠️ 切换失败: ${String(err)}`);
+          }
+          return;
+        }
+
+        // Try matching by name (exact, case-insensitive)
+        const matchingMode = availableModes?.find(
+          (m) => m.name.toLowerCase() === input.toLowerCase() || m.id.toLowerCase() === input.toLowerCase(),
+        );
+        if (!matchingMode) {
+          const count = availableModes?.length ?? 0;
+          await this.sendReply(userId, contextToken, `⚠️ 未找到 "${input}"，可用模式数: ${count}`);
+          return;
+        }
+        const current = this.sessionManager.getActiveMode(userId);
+        if (current === matchingMode.id) {
+          await this.sendReply(userId, contextToken, `已在 ${matchingMode.name} mode，无需切换`);
+          return;
+        }
+        try {
+          await this.sessionManager.switchAgent(userId, matchingMode.id);
+          await this.sendReply(userId, contextToken, `✅ Agent 已切换至 ${matchingMode.name}`);
+        } catch (err) {
+          await this.sendReply(userId, contextToken, `⚠️ 切换失败: ${String(err)}`);
+        }
+        break;
+      }
+
+      case "status": {
+        const mode = this.sessionManager.getActiveMode(userId);
+        if (mode) {
+          const matching = this.sessionManager.getAvailableModes(userId)?.find((m) => m.id === mode);
+          await this.sendReply(userId, contextToken, `🤖 当前 Agent: ${matching?.name ?? mode}`);
+        } else {
+          await this.sendReply(userId, contextToken, `🤖 Agent: (未设置)`);
+        }
+        break;
+      }
+    }
+  }
+
+  // ─── Model commands (/model) ───
+
+  private async handleModelCommand(
+    userId: string,
+    contextToken: string,
+    cmd: ReturnType<typeof parseModelCommand>,
+  ): Promise<void> {
+    if (!this.sessionManager) return;
+
+    switch (cmd!.kind) {
+      case "list": {
+        const availableModels = this.sessionManager.getAvailableModels(userId);
+        const currentModelId = this.sessionManager.getCurrentModel(userId);
+        const lines = ["📱 Models:"];
+
+        if (!availableModels || availableModels.length === 0) {
+          lines.push("  (OpenCode 未返回可用模型)");
+        } else {
+          // Extract provider from modelId (before first '/')
+          const providers = new Map<string, ModelInfo[]>();
+          for (const m of availableModels) {
+            const provider = m.modelId.split("/")[0];
+            if (!providers.has(provider)) providers.set(provider, []);
+            providers.get(provider)!.push(m);
+          }
+
+          const providerArg = cmd!.provider;
+          if (providerArg) {
+            // /model list <provider> — show models for specific provider
+            const models = providers.get(providerArg);
+            if (!models || models.length === 0) {
+              const allProviders = Array.from(providers.keys()).join(", ");
+              lines.push(`  ⚠️ 未找到 provider "${providerArg}"`);
+              lines.push(`  可用 providers: ${allProviders}`);
+            } else {
+              // Cache and show with index
+              this.sessionManager.cacheModelListForProvider(userId, providerArg, models);
+              lines.push(`  [${providerArg}]`);
+              for (let i = 0; i < models.length; i++) {
+                const m = models[i];
+                const marker = m.modelId === currentModelId ? " ✅" : "";
+                lines.push(`  ${i + 1}. ${m.modelId}${marker}`);
+              }
+              lines.push("");
+              lines.push(`💡 使用 /model switch <序号|模型名> 切换`);
+            }
+          } else {
+            // /model list — show providers and model counts
+            for (const [provider, models] of providers) {
+              const marker = currentModelId?.startsWith(`${provider}/`) ? " ✅" : "";
+              lines.push(`  ${provider} (${models.length})${marker}`);
+            }
+            lines.push("");
+            lines.push(`💡 使用 /model list <provider> 查看模型列表`);
+          }
+        }
+        await this.sendReply(userId, contextToken, lines.join("\n"));
+        break;
+      }
+
+      case "switch": {
+        const input = cmd!.name!.trim();
+        const index = parseInt(input, 10);
+
+        // If input is a number, use ONLY the last queried provider's cached models
+        if (!isNaN(index)) {
+          const cached = this.sessionManager.getCachedModelsForLastQueried(userId);
+          if (!cached || cached.length === 0) {
+            await this.sendReply(userId, contextToken, `⚠️ 索引 ${index} 无效，请先 /model list <provider> 查看`);
+            return;
+          }
+          if (index >= 1 && index <= cached.length) {
+            const m = cached[index - 1];
+            try {
+              await this.sessionManager.setModel(userId, m.modelId);
+            } catch (err) {
+              await this.sendReply(userId, contextToken, `⚠️ 切换失败: ${String(err)}`);
+              return;
+            }
+            await this.sendReply(userId, contextToken, `✅ Model 已切换至 ${m.name} (${m.modelId})`);
+          } else {
+            await this.sendReply(userId, contextToken, `⚠️ 索引 ${index} 无效，有效范围: 1-${cached.length}`);
+          }
+          return;
+        }
+
+        // Otherwise, treat as full model name
+        switch (input) {
+          default:
+            if (!input.includes("/")) {
+              await this.sendReply(userId, contextToken, `⚠️ 需要提供完整模型名 (provider/model)，如: anthropic/claude-sonnet-4-5`);
+              return;
+            }
+            try {
+              await this.sessionManager.setModel(userId, input);
+            } catch (err) {
+              await this.sendReply(userId, contextToken, `⚠️ 切换失败: ${String(err)}`);
+              return;
+            }
+            await this.sendReply(userId, contextToken, `✅ Model 已切换至 ${input}`);
+            break;
+        }
+        break;
+      }
+
+      case "status": {
+        const model = this.sessionManager.getCurrentModel(userId);
+        if (model) {
+          await this.sendReply(userId, contextToken, `📱 当前 Model: ${model}`);
+        } else {
+          await this.sendReply(userId, contextToken, `📱 Model: (未设置)`);
+        }
+        break;
+      }
+    }
+  }
+
+  // ─── Reasoning commands (/reasoning) ───
+
+  private async handleReasoningCommand(
+    userId: string,
+    contextToken: string,
+    cmd: ReturnType<typeof parseReasoningCommand>,
+  ): Promise<void> {
+    if (!this.sessionManager) return;
+
+    switch (cmd!.kind) {
+      case "list": {
+        const configOptions = this.sessionManager.getConfigOptions(userId);
+        const thoughtLevelOpt = configOptions?.find(
+          (o) => o.category === "thought_level",
+        );
+        const lines = ["🧠 推理级别 (thought_level):"];
+        if (thoughtLevelOpt?.type === "select") {
+          const current = thoughtLevelOpt.currentValue;
+          for (const opt of thoughtLevelOpt.options) {
+            if ("value" in opt) {
+              const marker = opt.value === current ? " ✅" : "";
+              const desc = opt.description ? ` — ${opt.description}` : "";
+              lines.push(`  ${opt.value}${marker} — ${opt.name}${desc}`);
+            } else {
+              lines.push(`  ── ${opt.name} ──`);
+              for (const o of opt.options) {
+                const marker = o.value === current ? " ✅" : "";
+                const desc = o.description ? ` — ${o.description}` : "";
+                lines.push(`  ${o.value}${marker} — ${o.name}${desc}`);
+              }
+            }
+          }
+        } else {
+          lines.push("  (OpenCode 未返回推理级别配置)");
+        }
+        lines.push("");
+        lines.push(`💡 使用 /reasoning switch <level> 切换`);
+        await this.sendReply(userId, contextToken, lines.join("\n"));
+        break;
+      }
+
+      case "switch": {
+        const level = cmd!.name!.toLowerCase();
+        try {
+          await this.sessionManager.setReasoning(userId, level);
+          await this.sendReply(userId, contextToken, `✅ 推理级别已切换至 ${level}`);
+        } catch (err) {
+          await this.sendReply(userId, contextToken, `⚠️ 切换失败: ${String(err)}`);
+        }
+        break;
+      }
+
+      case "status": {
+        const reasoning = this.sessionManager.getCurrentReasoning(userId);
+        if (reasoning) {
+          await this.sendReply(userId, contextToken, `🧠 当前推理级别: ${reasoning}`);
+        } else {
+          await this.sendReply(userId, contextToken, `🧠 推理级别: (未设置)`);
+        }
         break;
       }
     }
@@ -566,8 +863,8 @@ export class WeChatOpencodeBridge {
 
     const cmdName = match[1].toLowerCase();
 
-    // Bridge-known commands: workspace, ws, session, s, help, h, ?
-    const bridgeCommands = ["workspace", "ws", "session", "s", "help", "h", "?"];
+    // Bridge-known commands: workspace, ws, session, s, agent, a, model, reasoning, help, h, ?
+    const bridgeCommands = ["workspace", "ws", "session", "s", "agent", "a", "model", "reasoning", "help", "h", "?"];
     if (bridgeCommands.includes(cmdName)) return null;
 
     return `⚠️ 指令 "/${match[1]}" 不是 Bridge 内置指令，已转交 Agent 处理。`;

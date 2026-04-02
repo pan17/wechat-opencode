@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.8] - 2026-04-02
 
+### Added
+- `/agent list` `/agent switch` `/agent status` — 通过 ACP 协议动态切换 Agent 模式（Build/Plan 等），支持序号和名称切换
+- `/model list` `/model switch` `/model status` — 通过 ACP 协议动态切换模型，支持 list providers → list models 两级浏览，支持序号和完整名称切换
+- `/reasoning list` `/reasoning switch` `/reasoning status` — 通过 ACP 协议动态切换推理级别
+
 ### Changed
 - `/help` 动态显示 OpenCode Agent 当前可用的 slash commands（来自 `available_commands_update`）
 

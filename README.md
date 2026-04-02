@@ -82,6 +82,31 @@ First run will:
 | `/session new` | New session (clear context) |
 | `/session status` | Show current session |
 
+### Agent (`/agent` or `/a`)
+
+| Command | Description |
+|---------|-------------|
+| `/agent list` | List available agent modes with index and current marker |
+| `/agent switch <name\|n>` | Switch mode by name or index |
+| `/agent status` | Show current agent mode |
+
+### Model (`/model`)
+
+| Command | Description |
+|---------|-------------|
+| `/model list` | List all providers with model counts |
+| `/model list <provider>` | List models for a specific provider (with index) |
+| `/model switch <provider/model\|n>` | Switch model by full name or index (last queried provider) |
+| `/model status` | Show current model |
+
+### Reasoning (`/reasoning`)
+
+| Command | Description |
+|---------|-------------|
+| `/reasoning list` | List available reasoning levels |
+| `/reasoning switch <level>` | Switch reasoning level |
+| `/reasoning status` | Show current reasoning level |
+
 ## Requirements
 
 - Node.js 20+

@@ -83,6 +83,31 @@ wbo --agent opencode
 | `/session new` | 新会话（清除上下文） |
 | `/session status` | 显示当前会话 |
 
+### Agent（`/agent` 或 `/a`）
+
+| 命令 | 说明 |
+|------|------|
+| `/agent list` | 列出可用 Agent 模式，带序号和当前标记 |
+| `/agent switch <名称\|n>` | 按名称或序号切换 Agent 模式 |
+| `/agent status` | 显示当前 Agent 模式 |
+
+### Model（`/model`）
+
+| 命令 | 说明 |
+|------|------|
+| `/model list` | 列出所有模型提供商及其模型数量 |
+| `/model list <provider>` | 列出指定提供商下的模型（带序号） |
+| `/model switch <provider/model\|n>` | 按完整模型名或序号切换模型（最后查询的提供商） |
+| `/model status` | 显示当前模型 |
+
+### Reasoning（`/reasoning`）
+
+| 命令 | 说明 |
+|------|------|
+| `/reasoning list` | 列出可用推理级别 |
+| `/reasoning switch <level>` | 切换推理级别 |
+| `/reasoning status` | 显示当前推理级别 |
+
 ## 环境要求
 
 - Node.js 20+

@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-- **Package**: `wechat-opencode` v0.1.6 — ESM-only (`"type": "module"`)
+- **Package**: `wechat-opencode` v0.1.8 — ESM-only (`"type": "module"`)
 - **Runtime**: Node.js 20+
 - **Language**: TypeScript, compiled to JS via `tsc`
 - **Package manager**: npm (use `package-lock.json`)
@@ -46,7 +46,7 @@ src/acp/
 src/adapter/
   inbound.ts                    — WeChat message → ACP ContentBlock[] (text, image, file)
   outbound.ts                   — ACP reply → WeChat text (formatting, splitting)
-  workspace-cmd.ts              — Parse /workspace, /session, /help commands
+  workspace-cmd.ts              — Parse /workspace, /session, /agent, /model, /reasoning, /help commands
 src/weixin/
   auth.ts                       — WeChat iLink login (QR code, token persistence)
   monitor.ts                    — Long-poll for new messages
@@ -65,7 +65,7 @@ src/weixin/
 ### Session management
 - Each WeChat user has **one active agent process** at a time
 - Switching workspace/session uses ACP protocol (`session/new`, `session/load`) — **no process restart**
-- Agent process is spawned once per user; all session/workspace switches happen within the same process
+- Agent process is spawned once per user; all session/workspace/agent/model/reasoning switches happen within the same process
 - `unstable_resumeSession()` is no longer used — `loadSession()` replaces it
 - Session ID is persisted per-user in `~/.wechat-opencode/.wechat-bridge-state.json`
 
@@ -155,6 +155,28 @@ src/weixin/
 | `/session switch <n\|slug>` | Switch to session by index or slug |
 | `/session new` | Restart session (clear context) |
 | `/session status` | Show current session info |
+
+### Agent (/agent or /a)
+| Command | Description |
+|---------|-------------|
+| `/agent list` | List available agent modes (Build, Plan, etc.) with index |
+| `/agent switch <name\|n>` | Switch agent mode by name or index |
+| `/agent status` | Show current agent mode |
+
+### Model (/model)
+| Command | Description |
+|---------|-------------|
+| `/model list` | List all providers with model counts |
+| `/model list <provider>` | List models for a specific provider |
+| `/model switch <provider/model\|n>` | Switch model by full name or index (last queried provider) |
+| `/model status` | Show current model |
+
+### Reasoning (/reasoning)
+| Command | Description |
+|---------|-------------|
+| `/reasoning list` | List available reasoning levels |
+| `/reasoning switch <level>` | Switch reasoning level |
+| `/reasoning status` | Show current reasoning level |
 
 ### Help
 | Command | Description |

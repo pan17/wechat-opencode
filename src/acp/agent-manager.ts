@@ -45,6 +45,16 @@ export interface AgentProcessInfo {
   connection: acp.ClientSideConnection;
   sessionId: string;
   capabilities: AgentCapabilities;
+  /** Available session modes (e.g., "build", "plan") from initial session creation */
+  availableModes?: acp.SessionMode[];
+  /** Current active mode ID */
+  currentModeId?: string;
+  /** Available models from initial session creation */
+  availableModels?: acp.ModelInfo[];
+  /** Current active model ID */
+  currentModelId?: string;
+  /** Initial configuration options (thought_level, etc.) */
+  configOptions?: acp.SessionConfigOption[];
 }
 
 export async function spawnAgent(params: {
@@ -132,39 +142,89 @@ export async function spawnAgent(params: {
     throw new Error("OpenCode does not support loadSession capability. Please upgrade to a version that supports ACP session loading.");
   }
 
-  // Create or resume session
-  let sessionResult: { sessionId: string };
+  // Create or resume session — capture full response metadata
+  let availableModes: acp.SessionMode[] | undefined;
+  let currentModeId: string | undefined;
+  let availableModels: acp.ModelInfo[] | undefined;
+  let sessionModelId: string | undefined;
+  let configOptions: acp.SessionConfigOption[] | undefined;
+  let finalSessionId: string;
+
   if (existingSessionId) {
     log(`Resuming ACP session: ${existingSessionId}`);
     try {
-      sessionResult = await connection.unstable_resumeSession({
+      const resumeResult = await connection.unstable_resumeSession({
         sessionId: existingSessionId,
         cwd,
         mcpServers: [],
       });
-      log(`ACP session resumed: ${sessionResult.sessionId}`);
+      finalSessionId = existingSessionId;
+      log(`ACP session resumed: ${finalSessionId}`);
+
+      if (resumeResult.modes) {
+        availableModes = resumeResult.modes.availableModes;
+        currentModeId = resumeResult.modes.currentModeId;
+      }
+      if (resumeResult.models) {
+        availableModels = resumeResult.models.availableModels;
+        sessionModelId = resumeResult.models.currentModelId;
+      }
+      if (resumeResult.configOptions) {
+        configOptions = resumeResult.configOptions;
+      }
     } catch (err) {
       log(`Failed to resume session ${existingSessionId}: ${String(err)}, creating new one`);
-      sessionResult = await connection.newSession({
+      const newResult = await connection.newSession({
         cwd,
         mcpServers: [],
       });
-      log(`ACP session created (fallback): ${sessionResult.sessionId}`);
+      finalSessionId = newResult.sessionId;
+      log(`ACP session created (fallback): ${finalSessionId}`);
+
+      if (newResult.modes) {
+        availableModes = newResult.modes.availableModes;
+        currentModeId = newResult.modes.currentModeId;
+      }
+      if (newResult.models) {
+        availableModels = newResult.models.availableModels;
+        sessionModelId = newResult.models.currentModelId;
+      }
+      if (newResult.configOptions) {
+        configOptions = newResult.configOptions;
+      }
     }
   } else {
     log("Creating ACP session...");
-    sessionResult = await connection.newSession({
+    const newResult = await connection.newSession({
       cwd,
       mcpServers: [],
     });
-    log(`ACP session created: ${sessionResult.sessionId}`);
+    finalSessionId = newResult.sessionId;
+    log(`ACP session created: ${finalSessionId}`);
+
+    if (newResult.modes) {
+      availableModes = newResult.modes.availableModes;
+      currentModeId = newResult.modes.currentModeId;
+    }
+    if (newResult.models) {
+      availableModels = newResult.models.availableModels;
+      sessionModelId = newResult.models.currentModelId;
+    }
+    if (newResult.configOptions) {
+      configOptions = newResult.configOptions;
+    }
   }
 
   return {
     process: proc,
     connection,
-    sessionId: sessionResult.sessionId,
+    sessionId: finalSessionId,
     capabilities: caps,
+    availableModes,
+    currentModeId,
+    availableModels,
+    currentModelId: sessionModelId,
+    configOptions,
   };
 }
 

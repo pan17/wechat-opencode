@@ -26,6 +26,7 @@ export interface WeChatAcpClientOpts {
   sendTyping: () => Promise<void>;
   onThoughtFlush: (text: string) => Promise<void>;
   onMediaFlush: (blocks: MediaContent[]) => Promise<void>;
+  onCommandsUpdate?: (commands: acp.AvailableCommand[]) => void;
   log: (msg: string) => void;
   showThoughts: boolean;
 }
@@ -37,6 +38,7 @@ export class WeChatAcpClient implements acp.Client {
   private opts: WeChatAcpClientOpts;
   private lastTypingAt = 0;
   private replaying = false;
+  private availableCommands: acp.AvailableCommand[] = [];
   private static readonly TYPING_INTERVAL_MS = 5_000;
 
   constructor(opts: WeChatAcpClientOpts) {
@@ -199,10 +201,13 @@ export class WeChatAcpClient implements acp.Client {
         this.opts.log(`[config_option_update]`);
         break;
 
-      case "available_commands_update":
-        // Log it, no action needed
-        this.opts.log(`[available_commands_update]`);
+      case "available_commands_update": {
+        const cmdsUpdate = update as acp.AvailableCommandsUpdate & { sessionUpdate: "available_commands_update" };
+        this.availableCommands = cmdsUpdate.availableCommands ?? [];
+        this.opts.log(`[available_commands_update] ${this.availableCommands.length} commands: ${this.availableCommands.map(c => `/${c.name}`).join(", ")}`);
+        this.opts.onCommandsUpdate?.(this.availableCommands);
         break;
+      }
     }
   }
 
@@ -238,6 +243,11 @@ export class WeChatAcpClient implements acp.Client {
     }
 
     return text;
+  }
+
+  /** Get the latest available commands from the agent. */
+  getAvailableCommands(): acp.AvailableCommand[] {
+    return this.availableCommands;
   }
 
   /** Flush media blocks via callback and reset. */

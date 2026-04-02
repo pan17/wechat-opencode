@@ -26,6 +26,7 @@ import {
   parseSessionCommand,
   parseHelpCommand,
   formatHelp,
+  formatHelpWithNativeCommands,
 } from "./adapter/workspace-cmd.js";
 import type { WeChatOpencodeConfig } from "./config.js";
 
@@ -286,7 +287,7 @@ export class WeChatOpencodeBridge {
     const textContent = this.extractTextFromMessage(msg);
     if (textContent) {
       if (parseHelpCommand(textContent)) {
-        this.sendReply(userId, contextToken, formatHelp()).catch(() => {});
+        this.sendHelpReply(userId, contextToken).catch(() => {});
         return;
       }
 
@@ -302,6 +303,15 @@ export class WeChatOpencodeBridge {
       if (sCmd) {
         this.handleSessionCommand(userId, contextToken, sCmd).catch((err) => {
           this.log(`Session command error: ${String(err)}`);
+        });
+        return;
+      }
+
+      // Check for unrecognized slash commands — forward to agent with hint
+      const slashHint = this.detectUnknownSlashCommand(textContent);
+      if (slashHint) {
+        this.enqueueMessage(msg, userId, contextToken, slashHint).catch((err) => {
+          this.log(`Failed to enqueue message from ${userId}: ${String(err)}`);
         });
         return;
       }
@@ -539,6 +549,37 @@ export class WeChatOpencodeBridge {
 
   // ─── Helpers ───
 
+  /**
+   * Detect if text is an unrecognized slash command.
+   * Returns a hint message if it's a slash command not handled by bridge,
+   * or null if it's not a slash command at all.
+   */
+  private detectUnknownSlashCommand(text: string): string | null {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith("/")) return null;
+
+    // Extract command name (first token after /)
+    const match = trimmed.match(/^\/(\w+)/);
+    if (!match) return null;
+
+    const cmdName = match[1].toLowerCase();
+
+    // Bridge-known commands: workspace, ws, session, s, help, h, ?
+    const bridgeCommands = ["workspace", "ws", "session", "s", "help", "h", "?"];
+    if (bridgeCommands.includes(cmdName)) return null;
+
+    return `⚠️ 指令 "/${match[1]}" 不是 Bridge 内置指令，已转交 Agent 处理。`;
+  }
+
+  /**
+   * Send help reply combining bridge commands + OpenCode native commands.
+   */
+  private async sendHelpReply(userId: string, contextToken: string): Promise<void> {
+    const nativeCommands = this.sessionManager?.getAvailableCommands(userId) ?? [];
+    const helpText = formatHelpWithNativeCommands(nativeCommands);
+    await this.sendReply(userId, contextToken, helpText);
+  }
+
   private extractTextFromMessage(msg: WeixinMessage): string | null {
     const items = msg.item_list ?? [];
     for (const item of items) {
@@ -547,10 +588,10 @@ export class WeChatOpencodeBridge {
     return null;
   }
 
-  private async enqueueMessage(msg: WeixinMessage, userId: string, contextToken: string): Promise<void> {
+  private async enqueueMessage(msg: WeixinMessage, userId: string, contextToken: string, hint?: string): Promise<void> {
     const tempDir = path.join(this.config.storage.dir, "tempfile");
     const prompt = await weixinMessageToPrompt(msg, this.config.wechat.cdnBaseUrl, this.log, tempDir);
-    await this.sessionManager!.enqueue(userId, { prompt, contextToken });
+    await this.sessionManager!.enqueue(userId, { prompt, contextToken, hint });
   }
 
   private async sendReply(userId: string, contextToken: string, text: string): Promise<void> {

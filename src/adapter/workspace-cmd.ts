@@ -225,3 +225,43 @@ export function formatHelp(): string {
     "  /help                    Show this help message",
   ].join("\n");
 }
+
+/**
+ * Format help message including OpenCode native slash commands from available_commands_update.
+ */
+export function formatHelpWithNativeCommands(nativeCommands: Array<{ name: string; description: string }>): string {
+  const lines = [
+    "📖 Available Commands:",
+    "",
+    "── Bridge Commands ──",
+    "  /workspace list          List all workspaces",
+    "  /workspace add /path [name]  Add a workspace",
+    "  /workspace switch <n|path> Switch to workspace by index or path",
+    "  /workspace status        Show current workspace",
+    "  (shorthand: /ws ...)",
+    "",
+    "  /session new             Create a new session",
+    "  /session switch <n|slug> Switch to session by index or slug/title",
+    "  /session list            List all sessions",
+    "  /session list --cwd      List sessions in current workspace",
+    "  /session list <path|n>   List sessions by workspace path or index",
+    "  /session status          Show current session",
+    "  (shorthand: /s ...)",
+    "",
+    "  /help                    Show this help message",
+  ];
+
+  if (nativeCommands.length > 0) {
+    lines.push("");
+    lines.push("── OpenCode Agent Commands ──");
+    for (const cmd of nativeCommands) {
+      const name = `/${cmd.name}`;
+      const desc = cmd.description || "";
+      // Pad to align descriptions
+      const padded = name.padEnd(22);
+      lines.push(`  ${padded}${desc}`);
+    }
+  }
+
+  return lines.join("\n");
+}

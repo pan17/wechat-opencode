@@ -14,6 +14,7 @@ import { spawnAgent, killAgent, type AgentCapabilities } from "./agent-manager.j
 export interface PendingMessage {
   prompt: acp.ContentBlock[];
   contextToken: string;
+  hint?: string;  // Optional hint to append to the reply (e.g., "unrecognized slash command")
 }
 
 export interface UserSession {
@@ -264,6 +265,15 @@ export class SessionManager {
     return this.sessions.get(userId);
   }
 
+  /**
+   * Get available slash commands advertised by the agent.
+   */
+  getAvailableCommands(userId: string): acp.AvailableCommand[] {
+    const session = this.sessions.get(userId);
+    if (!session) return [];
+    return session.client.getAvailableCommands();
+  }
+
   getUserBySessionId(acpSessionId: string): { userId: string; contextToken: string } | null {
     for (const [userId, session] of this.sessions) {
       if (session.activeSessionId === acpSessionId) {
@@ -363,6 +373,11 @@ export class SessionManager {
           }
 
           this.opts.log(`[${session.userId}] Agent done (${result.stopReason}), reply ${replyText.length} chars`);
+
+          // Append hint if present
+          if (pending.hint && replyText.trim()) {
+            replyText += `\n\n${pending.hint}`;
+          }
 
           if (replyText.trim()) {
             await this.opts.onReply(session.userId, pending.contextToken, replyText);

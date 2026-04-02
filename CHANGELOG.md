@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.8] - 2026-04-02
+## [0.1.9] - 2026-04-03
 
 ### Added
 - `/agent list` `/agent switch` `/agent status` — 通过 ACP 协议动态切换 Agent 模式（Build/Plan 等），支持序号和名称切换

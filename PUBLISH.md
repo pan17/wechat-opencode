@@ -37,44 +37,40 @@ README 是用户文档，以下情况**需要更新**：
 编辑 `package.json` 中的 `version` 字段：
 ```json
 {
-  "version": "0.1.6"
+  "version": "0.1.7"
 }
 ```
 
-### 2. 发布到 npm
-
-```bash
-npm publish
-```
-
-### 3. 提交代码并推送 Tag
+### 2. 提交代码并推送 Tag
 
 ```bash
 git add -A
-git commit -m "release: v0.1.6"
-git tag v0.1.6
+git commit -m "release: v0.1.7"
+git tag v0.1.7
 git push origin main --tags
 ```
 
-> **注意**：`git push` 的"同步"按钮**不会推送 tags**，必须单独执行 `git push origin --tags` 或 `git push origin v0.1.6`。
+> **注意**：`git push` 的"同步"按钮**不会推送 tags**，必须单独执行 `git push origin --tags` 或 `git push origin v0.1.7`。
 
-### 4. 自动创建 GitHub Release
+### 3. 自动构建与发布
 
-推送 tag 后，GitHub Actions 会自动触发 `.github/workflows/release.yml`，自动创建带 Release Notes 的 GitHub Release。
+推送 tag 后，GitHub Actions 会自动触发 `.github/workflows/release.yml`，依次执行：
+
+1. **`publish-npm`** — 安装依赖 → 构建 → 发布到 npm（使用 `NPM` secret 认证）
+2. **`release`** — npm 发布成功后，自动创建带 Release Notes 的 GitHub Release
+
+> **前置条件**：在仓库 Settings → Secrets and variables → Actions 中配置 `NPM` secret，值为 npm 的 Automation Token。
 
 ---
 
 ## 完整命令示例
 
 ```bash
-# 1. 改 package.json version 为 0.1.6
+# 1. 改 package.json version 为 0.1.7
 
-# 2. 发布 npm
-npm publish
-
-# 3. 提交并推送
+# 2. 提交并推送（npm 发布和 GitHub Release 会自动完成）
 git add -A
-git commit -m "release: v0.1.6"
-git tag v0.1.6
+git commit -m "release: v0.1.7"
+git tag v0.1.7
 git push origin main --tags
 ```

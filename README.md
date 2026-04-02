@@ -19,22 +19,27 @@ Bridge WeChat direct messages to OpenCode, with full bidirectional support for t
 
 ## Install
 
+### Method 1: One-click run (Recommended)
+No installation required, `npx` will download and run automatically:
 ```bash
 npx wechat-bridge-opencode --agent opencode
 ```
 
-Or install globally:
-
+### Method 2: Global install
 ```bash
 npm install -g wechat-bridge-opencode
+```
+After installation, use the shorthand command:
+```bash
 wbo --agent opencode
 ```
 
 ## Usage
-
 ```bash
 cd /path/to/your/project
-npx wechat-bridge-opencode --agent opencode
+wbo --agent opencode
+# or use npx directly:
+# npx wechat-bridge-opencode --agent opencode
 ```
 
 First run will:

@@ -19,22 +19,27 @@
 
 ## 安装
 
+### 方式一：一键运行（推荐）
+无需安装，`npx` 会自动下载并运行：
 ```bash
 npx wechat-bridge-opencode --agent opencode
 ```
 
-或全局安装：
-
+### 方式二：全局安装
 ```bash
 npm install -g wechat-bridge-opencode
+```
+安装完成后，可使用简写命令：
+```bash
 wbo --agent opencode
 ```
 
 ## 使用
-
 ```bash
 cd /path/to/your/project
-npx wechat-bridge-opencode --agent opencode
+wbo --agent opencode
+# 或直接使用 npx：
+# npx wechat-bridge-opencode --agent opencode
 ```
 
 首次运行会：

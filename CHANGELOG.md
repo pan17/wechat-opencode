@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-04-02
+
+### Changed
+- `/help` 动态显示 OpenCode Agent 当前可用的 slash commands（来自 `available_commands_update`）
+
+### Fixed
+- 未知 slash command（如 `/new`、`/compact` 等 OpenCode TUI 指令）不再静默透传，改为立即回复提示"⚠️ 指令 "/xxx" 不是 Bridge 内置指令，已转交 Agent 处理。"并继续转发至 Agent
+
 ## [0.1.7] - 2026-04-02
 
 ### Added

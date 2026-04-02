@@ -255,11 +255,7 @@ export function formatHelpWithNativeCommands(nativeCommands: Array<{ name: strin
     lines.push("");
     lines.push("── OpenCode Agent Commands ──");
     for (const cmd of nativeCommands) {
-      const name = `/${cmd.name}`;
-      const desc = cmd.description || "";
-      // Pad to align descriptions
-      const padded = name.padEnd(22);
-      lines.push(`  ${padded}${desc}`);
+      lines.push(`  /${cmd.name}`);
     }
   }
 

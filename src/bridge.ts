@@ -307,10 +307,12 @@ export class WeChatOpencodeBridge {
         return;
       }
 
-      // Check for unrecognized slash commands — forward to agent with hint
+      // Check for unrecognized slash commands — send hint immediately, then forward to agent
       const slashHint = this.detectUnknownSlashCommand(textContent);
       if (slashHint) {
-        this.enqueueMessage(msg, userId, contextToken, slashHint).catch((err) => {
+        // Send hint as immediate independent reply, then enqueue message without hint
+        this.sendReply(userId, contextToken, slashHint).catch(() => {});
+        this.enqueueMessage(msg, userId, contextToken).catch((err) => {
           this.log(`Failed to enqueue message from ${userId}: ${String(err)}`);
         });
         return;

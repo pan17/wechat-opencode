@@ -22,6 +22,14 @@ export interface MonitorOpts {
   longPollTimeoutMs?: number;
   log: (msg: string) => void;
   onMessage: (msg: WeixinMessage) => void;
+  /**
+   * Best-effort user-visible notice for WeChat-channel conditions the
+   * user should know about but that are neither messages nor replies:
+   * session expiry (the bot pauses for an hour), repeated poll
+   * failures (backing off), and recovery. The bridge pushes the text
+   * to the user's WeChat chat; failures are logged, not thrown.
+   */
+  onNotify?: (msg: string) => void;
 }
 
 function getSyncBufPath(storageDir: string): string {
@@ -53,7 +61,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 export async function startMonitor(opts: MonitorOpts): Promise<void> {
-  const { baseUrl, token, storageDir, abortSignal, log, onMessage } = opts;
+  const { baseUrl, token, storageDir, abortSignal, log, onMessage, onNotify } = opts;
 
   let getUpdatesBuf = loadSyncBuf(storageDir);
   if (getUpdatesBuf) {
@@ -64,6 +72,15 @@ export async function startMonitor(opts: MonitorOpts): Promise<void> {
 
   let nextTimeoutMs = opts.longPollTimeoutMs ?? DEFAULT_LONG_POLL_TIMEOUT_MS;
   let consecutiveFailures = 0;
+  let notifiedBackoff = false;
+
+  const notify = (msg: string): void => {
+    try {
+      onNotify?.(msg);
+    } catch (err) {
+      log(`onNotify error: ${String(err)}`);
+    }
+  };
 
   while (!abortSignal?.aborted) {
     try {
@@ -88,7 +105,9 @@ export async function startMonitor(opts: MonitorOpts): Promise<void> {
 
         if (isSessionExpired) {
           log(`Session expired (errcode ${SESSION_EXPIRED_ERRCODE}), pausing 1 hour...`);
+          notify("⚠️ 微信登录会话已过期，机器人将在 1 小时后自动重试。若仍无效请重启 wbo 重新扫码登录。");
           consecutiveFailures = 0;
+          notifiedBackoff = false;
           await sleep(60 * 60_000, abortSignal);
           continue;
         }
@@ -98,6 +117,10 @@ export async function startMonitor(opts: MonitorOpts): Promise<void> {
 
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
           log(`${MAX_CONSECUTIVE_FAILURES} consecutive failures, backing off ${BACKOFF_DELAY_MS / 1000}s`);
+          if (!notifiedBackoff) {
+            notifiedBackoff = true;
+            notify("⚠️ 微信消息通道连续失败，正在退避重试（30 秒后自动继续）。");
+          }
           consecutiveFailures = 0;
           await sleep(BACKOFF_DELAY_MS, abortSignal);
         } else {
@@ -106,6 +129,13 @@ export async function startMonitor(opts: MonitorOpts): Promise<void> {
         continue;
       }
 
+      if (consecutiveFailures > 0 || notifiedBackoff) {
+        log("getUpdates recovered");
+        if (notifiedBackoff) {
+          notifiedBackoff = false;
+          notify("✅ 微信消息通道已恢复。");
+        }
+      }
       consecutiveFailures = 0;
 
       if (resp.get_updates_buf != null && resp.get_updates_buf !== "") {
@@ -124,6 +154,10 @@ export async function startMonitor(opts: MonitorOpts): Promise<void> {
 
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
         log(`${MAX_CONSECUTIVE_FAILURES} consecutive failures, backing off ${BACKOFF_DELAY_MS / 1000}s`);
+        if (!notifiedBackoff) {
+          notifiedBackoff = true;
+          notify("⚠️ 微信消息通道连续失败，正在退避重试（30 秒后自动继续）。");
+        }
         consecutiveFailures = 0;
         await sleep(BACKOFF_DELAY_MS, abortSignal);
       } else {

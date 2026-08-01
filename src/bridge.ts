@@ -336,6 +336,16 @@ export class WeChatOpencodeBridge {
       // further escalation available when the WeChat gateway itself
       // is unreachable).
       onSendWarning: (contextToken, text) => this.sendWarningReply(contextToken, text),
+      // System-level notices (stuck-turn detection, SSE pipeline
+      // outage/recovery). Delivered through the normal outbound queue so
+      // they can't reorder with an agent reply; best-effort on failure.
+      // An empty contextToken (e.g. WeChat-channel notices that don't
+      // carry one) falls back to the most recent user message's token.
+      onNotify: (contextToken, text) => {
+        const ctx = contextToken || this.currentContextToken;
+        if (!ctx) return Promise.resolve();
+        return this.sendReply(ctx, text);
+      },
       onMediaReply: (contextToken, blocks) => this.sendMediaReply(contextToken, blocks),
       sendTyping: (contextToken) => this.sendTypingIndicator(contextToken),
       cancelTyping: (contextToken) => this.cancelTypingIndicator(contextToken),
@@ -556,6 +566,10 @@ export class WeChatOpencodeBridge {
       abortSignal: this.abortController.signal,
       log: this.log,
       onMessage: (msg) => this.handleMessage(msg),
+      // WeChat-channel condition notices (session expiry, poll failures,
+      // recovery). No contextToken of their own — the bridge falls back
+      // to the most recent user message's token for delivery.
+      onNotify: (text) => this.sendReply(this.currentContextToken ?? "", text),
     });
   }
 

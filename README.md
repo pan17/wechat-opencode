@@ -20,6 +20,7 @@
 - **工具权限审批** — WeChat 弹权限卡片，支持 `once` / `always` / `reject` 三选一；`/auto-permission` 可切换自动接收模式；30 分钟软超时自动 reject
 - **静默模式** — 启用 `/silent`（别名 `/sl`）后，一轮 turn 中只发送最终文本回复；推理、工具摘要、增量文本在 turn 结束前隐藏。Question / Permission 请求不受影响；设置独立且跨重启持久化
 - **跨会话通知** — 其他 session 的 question/permission/error/completion 事件推送到微信；切换到有 pending 的会话自动弹出卡片
+- **卡住 / 异常自动提示** — Agent 5 分钟无响应（卡住）自动结束本轮并微信提示；SSE 事件连接中断超过 1 分钟、微信消息通道连续失败或登录过期、以及恢复时均自动微信通知，无需打开终端观察
 - **二维码登录** — 终端渲染二维码，扫码登录微信
 - **OpenCode Server** — 基于 HTTP API，不再需要 ACP 子进程
 

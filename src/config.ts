@@ -58,6 +58,21 @@ export interface WeChatOpencodeConfig {
     baseUrl: string;
     cdnBaseUrl: string;
     botType: string;
+    /**
+     * Auto-flush ("auto /next") delay in milliseconds.
+     *
+     * When the bridge hits WeChat's 10-consecutive-message send limit,
+     * remaining outbound segments are cached in `pendingOutbound` and
+     * normally only delivered on the next user message or an explicit
+     * `/next`. With `autoFlushMs` > 0, the bridge additionally starts a
+     * timer after the first cache hit and flushes the cached messages
+     * automatically once the delay elapses — no user message required.
+     * If the 10-msg limit still holds after a flush (more than 10
+     * segments were cached), the timer is re-armed for another round.
+     *
+     * Set to 0 to disable and keep the manual `/next`-only behavior.
+     */
+    autoFlushMs: number;
   };
   /** OpenCode Server connection config. */
   server: ServerConfig;
@@ -165,6 +180,7 @@ export function defaultConfig(): WeChatOpencodeConfig {
       baseUrl: "https://ilinkai.weixin.qq.com",
       cdnBaseUrl: "https://novac2c.cdn.weixin.qq.com/c2c",
       botType: "3",
+      autoFlushMs: 60_000,
     },
     server: {
       url: "http://localhost:4096",

@@ -229,6 +229,13 @@ export class WeChatOpencodeBridge {
   private outboundQueue = new Map<string, Promise<unknown>>();
   private static readonly MSG_LIMIT_WARN = 7;
   private static readonly MSG_LIMIT_MAX = 10;
+  /**
+   * Auto-flush ("auto /next") timer. Armed on the first cache hit while
+   * `pendingOutbound` is non-empty; fires once and re-arms if the 10-msg
+   * limit left messages cached. `null` when disabled (`autoFlushMs <= 0`)
+   * or while a timer is pending.
+   */
+  private autoFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private log: (msg: string) => void;
   private restartServer?: () => Promise<void>;
 
@@ -329,6 +336,16 @@ export class WeChatOpencodeBridge {
       // further escalation available when the WeChat gateway itself
       // is unreachable).
       onSendWarning: (contextToken, text) => this.sendWarningReply(contextToken, text),
+      // System-level notices (stuck-turn detection, SSE pipeline
+      // outage/recovery). Delivered through the normal outbound queue so
+      // they can't reorder with an agent reply; best-effort on failure.
+      // An empty contextToken (e.g. WeChat-channel notices that don't
+      // carry one) falls back to the most recent user message's token.
+      onNotify: (contextToken, text) => {
+        const ctx = contextToken || this.currentContextToken;
+        if (!ctx) return Promise.resolve();
+        return this.sendReply(ctx, text);
+      },
       onMediaReply: (contextToken, blocks) => this.sendMediaReply(contextToken, blocks),
       sendTyping: (contextToken) => this.sendTypingIndicator(contextToken),
       cancelTyping: (contextToken) => this.cancelTypingIndicator(contextToken),
@@ -445,6 +462,7 @@ export class WeChatOpencodeBridge {
         // notify text is semantically the same as cached agent text
         // for delivery purposes.
         this.pendingOutbound.push({ kind: "text", text, contextToken: "" });
+        this.scheduleAutoFlush("");
         return Promise.resolve();
       },
       log: (msg) => this.log(msg),
@@ -548,11 +566,19 @@ export class WeChatOpencodeBridge {
       abortSignal: this.abortController.signal,
       log: this.log,
       onMessage: (msg) => this.handleMessage(msg),
+      // WeChat-channel condition notices (session expiry, poll failures,
+      // recovery). No contextToken of their own — the bridge falls back
+      // to the most recent user message's token for delivery.
+      onNotify: (text) => this.sendReply(this.currentContextToken ?? "", text),
     });
   }
 
   async stop(): Promise<void> {
     this.log("Stopping bridge...");
+    if (this.autoFlushTimer) {
+      clearTimeout(this.autoFlushTimer);
+      this.autoFlushTimer = null;
+    }
     this.abortController.abort();
     // Stop the SSE event pipeline before tearing down the session manager.
     if (this.sessionManager) {
@@ -721,12 +747,13 @@ export class WeChatOpencodeBridge {
               const remaining = segments.slice(segments.indexOf(segment));
               const cached: PendingMessage[] = remaining.map((s) => ({ kind: "tool_text", text: s, contextToken }));
               this.pendingOutbound = [...this.pendingOutbound, ...cached];
+              this.scheduleAutoFlush(contextToken);
               break;
             }
             this.wechatMsgCount++;
             let payload = segment;
             if (this.wechatMsgCount > WeChatOpencodeBridge.MSG_LIMIT_WARN) {
-              payload += `\n\n⚠️ 微信限制连续发送消息数量10条（已发 ${this.wechatMsgCount} 条），发送 /next 可重置`;
+              payload += `\n\n⚠️ 微信限制连续发送消息数量10条（已发 ${this.wechatMsgCount} 条）${this.msgLimitNotice()}`;
             }
             await sendTextMessage(targetUserId, payload, {
               baseUrl: this.tokenData!.baseUrl,
@@ -744,6 +771,7 @@ export class WeChatOpencodeBridge {
             this.log(`[tool-api] WeChat 10-msg limit reached (sent=${this.wechatMsgCount}), caching file`);
             const fName = path.basename(filePath);
             this.pendingOutbound.push({ kind: "tool_file", filePath, fileName: fName, mimeType, contextToken });
+            this.scheduleAutoFlush(contextToken);
           } else {
             this.wechatMsgCount++;
             const fileBuffer = await fs.promises.readFile(filePath);
@@ -2650,6 +2678,43 @@ const apCmd = parseAutoPermissionCommand(trimmed);
     await this.sessionManager!.enqueue(parts, contextToken);
   }
 
+  /**
+   * Arm the auto-flush ("auto /next") timer, if enabled and not already
+   * pending. Called whenever messages are cached into `pendingOutbound`
+   * (outbound send limit hit). When the timer fires, `runAutoFlush`
+   * delivers the cached messages without requiring a user message or a
+   * manual `/next`.
+   */
+  private scheduleAutoFlush(contextToken: string): void {
+    const delayMs = this.config.wechat.autoFlushMs;
+    if (!delayMs || delayMs <= 0 || this.autoFlushTimer) return;
+    this.autoFlushTimer = setTimeout(() => {
+      this.autoFlushTimer = null;
+      this.runAutoFlush(contextToken).catch((err: unknown) => {
+        this.log(`auto-flush error: ${String(err)}`);
+      });
+    }, delayMs);
+  }
+
+  /**
+   * Auto-flush body. Waits for any in-flight outbound send on the same
+   * contextToken to settle (so the flush doesn't interleave with an agent
+   * reply and reorder messages on WeChat), then runs the same flush the
+   * manual `/next` command uses. If the 10-msg limit still left messages
+   * cached, re-arms the timer for another round instead of waiting for the
+   * user.
+   */
+  private async runAutoFlush(contextToken: string): Promise<void> {
+    if (this.pendingOutbound.length === 0) return;
+    const inflight = this.outboundQueue.get(contextToken);
+    if (inflight) await inflight.catch(() => {});
+    if (this.pendingOutbound.length === 0) return;
+    await this.flushPending(contextToken);
+    if (this.pendingOutbound.length > 0) {
+      this.scheduleAutoFlush(contextToken);
+    }
+  }
+
   private async flushPending(contextToken: string): Promise<void> {
     if (this.pendingOutbound.length === 0) {
       await this.sendReply(contextToken, "✅ No cached messages");
@@ -2673,7 +2738,7 @@ const apCmd = parseAutoPermissionCommand(trimmed);
         const text = msg.kind === "text" || msg.kind === "tool_text" ? msg.text : "";
         const payload =
           text && this.wechatMsgCount > WeChatOpencodeBridge.MSG_LIMIT_WARN
-            ? text + `\n\n⚠️ 微信限制连续发送消息数量10条（已发 ${this.wechatMsgCount} 条），发送 /next 可重置`
+            ? text + `\n\n⚠️ 微信限制连续发送消息数量10条（已发 ${this.wechatMsgCount} 条）${this.msgLimitNotice()}`
             : text;
 
         switch (msg.kind) {
@@ -2732,6 +2797,7 @@ const apCmd = parseAutoPermissionCommand(trimmed);
     if (remaining.length > 0) {
       this.pendingOutbound = remaining;
       await this.sendReply(contextToken, `✅ Sent ${sent}, ${remaining.length} cached, /next to continue`);
+      this.scheduleAutoFlush(contextToken);
     } else {
       this.pendingOutbound = [];
       await this.sendReply(contextToken, `✅ All ${sent} cached messages sent`);
@@ -2740,6 +2806,18 @@ const apCmd = parseAutoPermissionCommand(trimmed);
 
   private sendReply(contextToken: string, text: string): Promise<void> {
     return this.enqueueOutbound(contextToken, () => this.sendReplyImpl(contextToken, text));
+  }
+
+  /**
+   * Suffix for the WeChat 10-msg-limit warning. When auto-flush is enabled
+   * the user doesn't need to do anything — remaining messages are delivered
+   * automatically — so we say so instead of asking for a manual `/next`.
+   */
+  private msgLimitNotice(): string {
+    const autoFlushMs = this.config.wechat.autoFlushMs;
+    return autoFlushMs && autoFlushMs > 0
+      ? "（其余消息将自动续发）"
+      : "（发送 /next 可重置）";
   }
 
   private async sendReplyImpl(contextToken: string, text: string): Promise<void> {
@@ -2752,13 +2830,14 @@ const apCmd = parseAutoPermissionCommand(trimmed);
         const remaining = segments.slice(segments.indexOf(segment));
         const cached: PendingMessage[] = remaining.map((s) => ({ kind: "text", text: s, contextToken }));
         this.pendingOutbound = [...this.pendingOutbound, ...cached];
+        this.scheduleAutoFlush(contextToken);
         break;
       }
 
       this.wechatMsgCount++;
       let payload = segment;
       if (this.wechatMsgCount > WeChatOpencodeBridge.MSG_LIMIT_WARN) {
-        payload += `\n\n⚠️ 微信限制连续发送消息数量10条（已发 ${this.wechatMsgCount} 条），发送 /next 可重置`;
+        payload += `\n\n⚠️ 微信限制连续发送消息数量10条（已发 ${this.wechatMsgCount} 条）${this.msgLimitNotice()}`;
       }
 
       await sendTextMessage(this.userState?.userId ?? "", payload, {
@@ -2810,6 +2889,7 @@ const apCmd = parseAutoPermissionCommand(trimmed);
         const remaining = blocks.slice(blocks.indexOf(block));
         const cached: PendingMessage[] = remaining.map((b) => ({ kind: "media", block: b, contextToken }));
         this.pendingOutbound = [...this.pendingOutbound, ...cached];
+        this.scheduleAutoFlush(contextToken);
         break;
       }
 

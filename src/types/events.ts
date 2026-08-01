@@ -499,4 +499,12 @@ export interface AccumulatedTurn {
    * consecutive tools that share the same current-phase).
    */
   currentToolKey: string | null;
+  /**
+   * True if the server signaled `session.status = retry` (or any retry
+   * condition) during this turn. OpenCode servers retry failed model
+   * calls internally; when the retry also fails the turn ends with zero
+   * output. `finalizeTurn` uses this flag to tell the user the request
+   * failed instead of leaving them with silence ("对方正在输入" 后无下文).
+   */
+  retried: boolean;
 }

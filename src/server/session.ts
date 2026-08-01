@@ -51,6 +51,7 @@ import type {
   TextPart,
   ToolPart,
   TrackedTool,
+  EventPipelineStatus,
 } from "../types/events.js";
 import type {
   PendingQuestion,
@@ -68,8 +69,14 @@ import { DEFAULT_AUTO_PERMISSION_MODE } from "../types/permission.js";
 
 /** Idle debounce: wait this long after the last delta before considering the turn final. */
 const TURN_FINALIZE_DEBOUNCE_MS = 500;
-/** Hard ceiling: if no event for this long, force-finalize the turn. */
 const TURN_STUCK_TIMEOUT_MS = 5 * 60_000;
+/**
+ * How long the SSE event pipeline may sit in `connecting`/`reconnecting`
+ * before the user is told the agent's event stream is down (via
+ * `onNotify`). The pipeline retries with exponential backoff on its own;
+ * this is purely a user-visible warning, not a recovery mechanism.
+ */
+const PIPELINE_ISSUE_NOTIFY_MS = 60_000;
 /**
  * Soft timeout for unanswered `question.asked` events. After this many ms
  * with no user reply, SessionManager auto-rejects the question (POST
@@ -236,6 +243,20 @@ export interface SessionManagerOpts {
    * (the pre-retry behavior).
    */
   onSendWarning?: (contextToken: string, text: string) => Promise<void>;
+  /**
+   * Invoked when the SessionManager needs to surface a system-level
+   * condition to the WeChat user that is neither a reply nor a send
+   * failure, e.g.:
+   *   - the 5-minute stuck timeout fired (the agent produced no events
+   *     for too long and the turn was force-finalized — the user was
+   *     probably staring at a conversation that silently went nowhere)
+   *   - the SSE event pipeline lost its connection and has been
+   *     reconnecting for a while, then recovered
+   *
+   * The bridge should push `text` to the user's WeChat chat
+   * (best-effort; failures are logged, not thrown).
+   */
+  onNotify?: (contextToken: string, text: string) => Promise<void> | void;
 }
 
 interface QueueItem {
@@ -442,6 +463,14 @@ export class SessionManager {
   /** Hard timeout timer in case events stop arriving entirely. */
   private stuckTimer: ReturnType<typeof setTimeout> | null = null;
   /**
+   * Timestamp (ms) when the SSE pipeline entered `connecting` /
+   * `reconnecting`. `null` while the pipeline is connected (or stopped).
+   * Powers the "event stream down" warning via `onNotify`.
+   */
+  private pipelineIssueAt: number | null = null;
+  /** True once the pipeline-down warning has been sent for the current outage. */
+  private pipelineIssueNotified = false;
+  /**
    * Session-level dedup map for the tool summary: `callID` → last status
    * that was emitted to WeChat for that tool. Survives turn finalization
    * (intentionally NOT per-turn) so long-running tools that span multiple
@@ -540,6 +569,8 @@ export class SessionManager {
    * sees `⚠️ 上一条<label>发送失败…` instead of a silent loss.
    */
   private onSendWarning?: (contextToken: string, text: string) => Promise<void>;
+  /** System-condition notifier; see `SessionManagerOpts.onNotify`. */
+  private onNotify?: (contextToken: string, text: string) => Promise<void> | void;
   /**
    * Client-side preference for auto-accepting permission requests. When
    * `off` (default), every `permission.asked` event surfaces a WeChat
@@ -569,6 +600,7 @@ export class SessionManager {
     this.onPermissionTimedOut = opts.onPermissionTimedOut;
     this.onOtherSessionEvent = opts.onOtherSessionEvent;
     this.onSendWarning = opts.onSendWarning;
+    this.onNotify = opts.onNotify;
   }
 
   /** Current session ID, or null if not yet created. */
@@ -1223,6 +1255,7 @@ export class SessionManager {
       onEvent: (event) => this.handleEvent(event),
       onStatusChange: (status) => {
         this.log(`[event] pipeline status: ${status}`);
+        this.handlePipelineStatus(status);
       },
       onError: (err) => {
         this.log(`[event] pipeline error: ${err.message}`);
@@ -1883,6 +1916,7 @@ export class SessionManager {
       status: "accumulating",
       startedAt: Date.now(),
       lastEventAt: Date.now(),
+      retried: false,
       sentTextPartIds: new Set(),
       pendingTextParts: [],
       // Reasoning parts that arrived before assistantMessageId was known
@@ -2805,6 +2839,13 @@ export class SessionManager {
     if (event.properties.status.type === "busy") {
       this.isSessionBusy = true;
     } else if (event.properties.status.type === "idle" || event.properties.status.type === "retry") {
+      if (event.properties.status.type === "retry" && this.currentTurn) {
+        // The server hit an error and is retrying internally. If the
+        // retry also fails, the turn finalizes with zero output — mark
+        // the turn so `finalizeTurn` can warn the user instead of
+        // leaving them with an unexplained silence.
+        this.currentTurn.retried = true;
+      }
       this.isSessionBusy = false;
       this.armFinalizeDebounce();
     }
@@ -2889,9 +2930,64 @@ export class SessionManager {
       this.stuckTimer = null;
       if (this.currentTurn) {
         this.log(`[turn] stuck timeout (no events for ${TURN_STUCK_TIMEOUT_MS}ms); force-finalizing`);
+        const minutes = Math.round(TURN_STUCK_TIMEOUT_MS / 60_000);
+        this.emitNotify(
+          this.currentTurn.contextToken ?? "",
+          `⚠️ Agent 已 ${minutes} 分钟无响应（可能卡住）。已结束本轮，可重新发送消息继续；也可发送 /stop 中断或 /restart 重启。`,
+        );
         this.finalizeTurn("finalized");
       }
     }, TURN_STUCK_TIMEOUT_MS);
+  }
+
+  /**
+   * Best-effort dispatch of a system-condition notice to WeChat via the
+   * optional `onNotify` callback. Never throws — a broken notifier must
+   * not take down the turn state machine or the SSE pipeline.
+   */
+  private emitNotify(contextToken: string, text: string): void {
+    if (!this.onNotify) return;
+    try {
+      const ret = this.onNotify(contextToken, text);
+      if (ret && typeof (ret as Promise<unknown>).catch === "function") {
+        (ret as Promise<unknown>).catch((err: unknown) => {
+          this.log(`[session] onNotify async error: ${String(err)}`);
+        });
+      }
+    } catch (err) {
+      this.log(`[session] onNotify sync error: ${String(err)}`);
+    }
+  }
+
+  /**
+   * Track SSE pipeline connectivity and warn the user when it has been
+   * down for longer than `PIPELINE_ISSUE_NOTIFY_MS` (and quietly note
+   * the recovery once the stream is back).
+   */
+  private handlePipelineStatus(status: EventPipelineStatus): void {
+    const now = Date.now();
+    if (status === "connecting" || status === "reconnecting") {
+      if (this.pipelineIssueAt === null) {
+        this.pipelineIssueAt = now;
+        this.pipelineIssueNotified = false;
+      } else if (!this.pipelineIssueNotified && now - this.pipelineIssueAt >= PIPELINE_ISSUE_NOTIFY_MS) {
+        this.pipelineIssueNotified = true;
+        this.emitNotify(
+          this.lastEnqueuedContextToken ?? "",
+          "⚠️ Agent 事件连接异常，正在尝试重连。若长时间未恢复请发送 /restart 重启。",
+        );
+      }
+      return;
+    }
+    // Connected (or stopped) — clear the outage state.
+    if (this.pipelineIssueNotified) {
+      this.emitNotify(
+        this.lastEnqueuedContextToken ?? "",
+        "✅ Agent 事件连接已恢复。",
+      );
+    }
+    this.pipelineIssueAt = null;
+    this.pipelineIssueNotified = false;
   }
 
   /**
@@ -3067,6 +3163,15 @@ export class SessionManager {
         this.onReply(contextToken, fallback).catch((err) => {
           this.log(`onReply error for fallback reply: ${String(err)}`);
           void this.notifySendFailure(contextToken, "兜底回复");
+        });
+      } else if (turn.retried) {
+        // The server retried a failed model call and the retry also
+        // produced nothing. Without this notice the user sees the
+        // WeChat "对方正在输入…" indicator and then silence.
+        const msg = "❌ Agent 请求失败，未返回任何内容（模型调用出错或被限流）。请稍后重试，或发送 /restart 重启。";
+        this.onReply(contextToken, msg).catch((err) => {
+          this.log(`onReply error for retry-failure notice: ${String(err)}`);
+          void this.notifySendFailure(contextToken, "失败提示");
         });
       } else {
         this.log(`[turn] no text to send (reason=${reason})`);

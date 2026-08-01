@@ -1916,6 +1916,7 @@ export class SessionManager {
       status: "accumulating",
       startedAt: Date.now(),
       lastEventAt: Date.now(),
+      retried: false,
       sentTextPartIds: new Set(),
       pendingTextParts: [],
       // Reasoning parts that arrived before assistantMessageId was known
@@ -2838,6 +2839,13 @@ export class SessionManager {
     if (event.properties.status.type === "busy") {
       this.isSessionBusy = true;
     } else if (event.properties.status.type === "idle" || event.properties.status.type === "retry") {
+      if (event.properties.status.type === "retry" && this.currentTurn) {
+        // The server hit an error and is retrying internally. If the
+        // retry also fails, the turn finalizes with zero output — mark
+        // the turn so `finalizeTurn` can warn the user instead of
+        // leaving them with an unexplained silence.
+        this.currentTurn.retried = true;
+      }
       this.isSessionBusy = false;
       this.armFinalizeDebounce();
     }
@@ -3155,6 +3163,15 @@ export class SessionManager {
         this.onReply(contextToken, fallback).catch((err) => {
           this.log(`onReply error for fallback reply: ${String(err)}`);
           void this.notifySendFailure(contextToken, "兜底回复");
+        });
+      } else if (turn.retried) {
+        // The server retried a failed model call and the retry also
+        // produced nothing. Without this notice the user sees the
+        // WeChat "对方正在输入…" indicator and then silence.
+        const msg = "❌ Agent 请求失败，未返回任何内容（模型调用出错或被限流）。请稍后重试，或发送 /restart 重启。";
+        this.onReply(contextToken, msg).catch((err) => {
+          this.log(`onReply error for retry-failure notice: ${String(err)}`);
+          void this.notifySendFailure(contextToken, "失败提示");
         });
       } else {
         this.log(`[turn] no text to send (reason=${reason})`);

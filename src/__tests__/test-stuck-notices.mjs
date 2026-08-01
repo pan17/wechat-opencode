@@ -130,3 +130,143 @@ describe("SessionManager pipeline-outage notice", () => {
     }
   });
 });
+
+describe("SessionManager retry-failure notice", () => {
+  test("zero-output turn after retry tells the user the request failed", async () => {
+    vi.useFakeTimers();
+    try {
+      const replies = [];
+      const config = defaultConfig();
+      const manager = new SessionManager({
+        serverUrl: config.server.url,
+        cwd: config.agent.cwd,
+        log: () => {},
+        onReply: async (contextToken, text) => {
+          replies.push({ contextToken, text });
+        },
+        onMediaReply: async () => {},
+        sendTyping: async () => {},
+      });
+      manager.currentTurn = {
+        contextToken: "ctx-retry",
+        status: "accumulating",
+        retried: true,
+      };
+      const finalizeSpy = vi.spyOn(manager, "finalizeTurn").mockImplementation(() => {
+        manager.currentTurn = null;
+      });
+
+      // The retry flag is set when session.status=retry arrives mid-turn.
+      manager.handleSessionStatus({
+        type: "session.status",
+        properties: { sessionID: "ses-x", status: { type: "retry" } },
+      });
+      expect(manager.currentTurn.retried).toBe(true);
+
+      // Force-finalize (what the debounce does); currentTurn is cleared by
+      // the spy so finalizeTurn's fallback runs against a snapshot... it
+      // doesn't — finalizeTurn reads this.currentTurn. Simulate directly:
+      finalizeSpy.mockRestore();
+      // Rebuild a turn and call finalizeTurn for real.
+      manager.currentTurn = {
+        sessionId: "ses-x",
+        userMessageId: "msg-1",
+        assistantMessageId: null,
+        parts: new Map(),
+        textBuffer: "",
+        finalText: "",
+        toolCalls: new Map(),
+        hasBackgroundTasks: false,
+        contextToken: "ctx-retry",
+        hint: null,
+        status: "accumulating",
+        startedAt: Date.now(),
+        lastEventAt: Date.now(),
+        retried: true,
+        sentTextPartIds: new Set(),
+        pendingTextParts: [],
+        pendingReasoningParts: [],
+        showThoughtsSnapshot: false,
+        showToolsSnapshot: false,
+        immersiveSnapshot: false,
+        immersiveLastText: "",
+        reasoningCharCount: 0,
+        reasoningStartMs: null,
+        reasoningEndMs: null,
+        sentReasoningPartIds: new Set(),
+        reasoningPartTimestamps: new Map(),
+        currentPartType: null,
+        currentPartID: null,
+        currentReasoningText: "",
+        currentReasoningStartMs: null,
+        currentReasoningEndMs: null,
+        currentText: "",
+        currentToolKey: null,
+      };
+      manager.finalizeTurn("finalized");
+
+      expect(replies).toHaveLength(1);
+      expect(replies[0].contextToken).toBe("ctx-retry");
+      expect(replies[0].text).toContain("❌ Agent 请求失败");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("zero-output turn WITHOUT retry stays silent (no false positives)", async () => {
+    vi.useFakeTimers();
+    try {
+      const replies = [];
+      const config = defaultConfig();
+      const manager = new SessionManager({
+        serverUrl: config.server.url,
+        cwd: config.agent.cwd,
+        log: () => {},
+        onReply: async (contextToken, text) => {
+          replies.push({ contextToken, text });
+        },
+        onMediaReply: async () => {},
+        sendTyping: async () => {},
+      });
+      manager.currentTurn = {
+        sessionId: "ses-y",
+        userMessageId: "msg-2",
+        assistantMessageId: null,
+        parts: new Map(),
+        textBuffer: "",
+        finalText: "",
+        toolCalls: new Map(),
+        hasBackgroundTasks: false,
+        contextToken: "ctx-silent",
+        hint: null,
+        status: "accumulating",
+        startedAt: Date.now(),
+        lastEventAt: Date.now(),
+        retried: false,
+        sentTextPartIds: new Set(),
+        pendingTextParts: [],
+        pendingReasoningParts: [],
+        showThoughtsSnapshot: false,
+        showToolsSnapshot: false,
+        immersiveSnapshot: false,
+        immersiveLastText: "",
+        reasoningCharCount: 0,
+        reasoningStartMs: null,
+        reasoningEndMs: null,
+        sentReasoningPartIds: new Set(),
+        reasoningPartTimestamps: new Map(),
+        currentPartType: null,
+        currentPartID: null,
+        currentReasoningText: "",
+        currentReasoningStartMs: null,
+        currentReasoningEndMs: null,
+        currentText: "",
+        currentToolKey: null,
+      };
+      manager.finalizeTurn("interrupted");
+      expect(replies).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
